@@ -92,7 +92,8 @@ class MainWindow(ctk.CTk):
             btn_bg = "#f0f4f8"
             btn_hover = "#e5e7eb"
         
-        ctk.CTkButton(right, text="+", width=40, fg_color=btn_bg, hover_color=btn_hover, text_color="#3b82f6").pack(side="right", padx=5)
+        self.browse_btn = ctk.CTkButton(right, text="📁 Browse", width=80, fg_color=btn_bg, hover_color=btn_hover, text_color="#3b82f6", command=self.open_folder_dialog)
+        self.browse_btn.pack(side="right", padx=5)
 
         return frame
     
@@ -143,10 +144,19 @@ class MainWindow(ctk.CTk):
 
         return frame
 
-    def update_preview(self, name):
-        self.preview_box.delete("1.0", "end")
-        self.preview_box.insert("end", f"Selected File:\n\n{name}\n\nDetails:\n- Size: Sample\n- Type: File\n- AI Tag: Demo")
+    def open_folder_dialog(self):
+        """Open a dialog to select a folder from the PC and load its files."""
+        folder_path = ctk.filedialog.askdirectory(title="Select Folder to Manage")
+        if folder_path:
+            self.file_list.load_files(directory=folder_path)
 
+    def update_preview(self, name, full_path=None):
+        # Extract filename by removing the emoji prefix if any
+        display_name = name.split(" ", 1)[-1] if " " in name else name
+        self.selected_file = full_path if full_path else display_name
+        
+        self.preview_box.delete("1.0", "end")
+        self.preview_box.insert("end", f"Selected File:\n\n{display_name}\n\nPath:\n{self.selected_file}\n\nDetails:\n- AI Tag: Pending...")
     def toggle_theme(self):
         current = ctk.get_appearance_mode()
         new_mode = "light" if current == "Dark" else "dark"
@@ -173,6 +183,11 @@ class MainWindow(ctk.CTk):
         self.sidebar.update_colors()
 
     def show_ai_popup(self):
+        if not hasattr(self, 'selected_file') or not self.selected_file:
+            # If no file is selected, show a quick error in preview
+            self.preview_box.insert("end", "\n[!] Please select a file first.")
+            return
+
         mode = ctk.get_appearance_mode()
         if mode == "Dark":
             win_bg = "#0f172a"
@@ -196,7 +211,7 @@ class MainWindow(ctk.CTk):
             btn_text = "#ffffff"
         
         win = ctk.CTkToplevel(self)
-        win.geometry("360x320")
+        win.geometry("380x420")
         win.title("AI Analysis")
         win.configure(fg_color=win_bg)
         win.attributes('-alpha', 0.95)
@@ -207,22 +222,59 @@ class MainWindow(ctk.CTk):
         header = ctk.CTkLabel(card, text="AI Classification", font=("Segoe UI", 16, "bold"), text_color=text_main)
         header.pack(pady=(15, 10))
         
+        # Analyze the file using the bridge
+        file_path = self.selected_file
+        
+        # For testing purposes: Create dummy file if it doesn't exist so Ollama can read it
+        import os
+        if not os.path.exists(file_path):
+            with open(file_path, "w") as f:
+                f.write(f"This is a dummy content for {file_path}")
+
+        # Call the backend
+        win.update() # Force UI update before blocking call
+        result = self.bridge.analyze_file(file_path)
+        
+        category = result.get("category", "Unknown")
+        confidence = result.get("confidence", 0.0)
+        source = result.get("source", "Unknown")
+        
         progress_frame = ctk.CTkFrame(card, fg_color=progress_bg, corner_radius=8)
         progress_frame.pack(pady=10, padx=15, fill="x")
         
         progress_bar = ctk.CTkProgressBar(progress_frame, fg_color=progress_fill, progress_color="#3b82f6")
         progress_bar.pack(fill="x", padx=8, pady=8)
-        progress_bar.set(0.94)
+        progress_bar.set(confidence)
         
-        ctk.CTkLabel(card, text="Category: Images", text_color=text_secondary, font=("Segoe UI", 12)).pack()
-        ctk.CTkLabel(card, text="Tags: Nature, HD", text_color=text_tertiary, font=("Segoe UI", 11)).pack()
-        ctk.CTkLabel(card, text="Confidence: 94%", text_color="#3b82f6", font=("Segoe UI", 12, "bold")).pack(pady=(5, 15))
+        ctk.CTkLabel(card, text=f"Category: {category}", text_color=text_secondary, font=("Segoe UI", 12)).pack()
+        ctk.CTkLabel(card, text=f"Source: {source}", text_color=text_tertiary, font=("Segoe UI", 11)).pack()
+        conf_pct = int(confidence * 100)
+        ctk.CTkLabel(card, text=f"Confidence: {conf_pct}%", text_color="#3b82f6", font=("Segoe UI", 12, "bold")).pack(pady=(5, 15))
 
         move_btn = ctk.CTkButton(card, text="Move to Suggested Folder", fg_color="#3b82f6", hover_color="#2563eb", text_color=btn_text, font=("Segoe UI", 12, "bold"))
-        move_btn.pack(pady=15)
+        move_btn.pack(pady=10)
         
         def button_press():
             move_btn.configure(text="✓ Moving...")
-            self.after(800, lambda: move_btn.configure(text="Move to Suggested Folder"))
+            self.after(800, lambda: win.destroy())
         
         move_btn.configure(command=button_press)
+
+        # Level 3 Feedback System UI
+        ctk.CTkLabel(card, text="Incorrect? Teach the AI:", text_color=text_secondary, font=("Segoe UI", 10)).pack(pady=(10, 0))
+        
+        correction_frame = ctk.CTkFrame(card, fg_color="transparent")
+        correction_frame.pack(pady=5)
+        
+        correct_entry = ctk.CTkEntry(correction_frame, placeholder_text="Correct Category", width=120, height=28)
+        correct_entry.pack(side="left", padx=5)
+        
+        def submit_correction():
+            new_cat = correct_entry.get().strip()
+            if new_cat:
+                self.bridge.user_correction(file_path, new_cat)
+                win.destroy()
+                self.preview_box.insert("end", f"\n[Feedback Saved] Learned that {file_path} is {new_cat}")
+
+        correct_btn = ctk.CTkButton(correction_frame, text="Correct", width=60, height=28, fg_color="#6b7280", hover_color="#4b5563", command=submit_correction)
+        correct_btn.pack(side="left")

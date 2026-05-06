@@ -1,5 +1,16 @@
+import os
+import math
+from datetime import datetime
 import customtkinter as ctk
 
+def format_size(size_bytes):
+    if size_bytes == 0:
+        return "0 B"
+    size_name = ("B", "KB", "MB", "GB", "TB")
+    i = int(math.floor(math.log(size_bytes, 1024)))
+    p = math.pow(1024, i)
+    s = round(size_bytes / p, 2)
+    return f"{s} {size_name[i]}"
 class FileList(ctk.CTkFrame):
     def __init__(self, master):
         super().__init__(master)
@@ -34,12 +45,23 @@ class FileList(ctk.CTkFrame):
                 "text_hover": "#111827"
             }
 
-    def load_files(self):
-        files = [
-            ("📄 report.pdf", "2 MB", "Today"),
-            ("🖼 photo.png", "1.5 MB", "Yesterday"),
-            ("🎬 video.mp4", "20 MB", "2 days ago"),
-        ]
+    def load_files(self, directory="."):
+        self.current_directory = directory
+        # Clear existing file cards
+        for widget in self.scroll.winfo_children():
+            widget.destroy()
+
+        files = []
+        try:
+            for f in os.listdir(directory):
+                path = os.path.join(directory, f)
+                if os.path.isfile(path):
+                    size = os.path.getsize(path)
+                    mod_time = os.path.getmtime(path)
+                    date_str = datetime.fromtimestamp(mod_time).strftime('%Y-%m-%d %H:%M')
+                    files.append((f, format_size(size), date_str))
+        except Exception as e:
+            files.append((f"Error reading directory: {e}", "", ""))
 
         colors = self.get_colors()
 
@@ -97,4 +119,5 @@ class FileList(ctk.CTkFrame):
             card.bind("<Leave>", on_leave)
 
     def select_file(self, name):
-        self.master.update_preview(name)
+        full_path = os.path.join(getattr(self, 'current_directory', '.'), name)
+        self.master.update_preview(name, full_path)
