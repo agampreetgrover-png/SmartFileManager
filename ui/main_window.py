@@ -3,8 +3,9 @@ from ui.sidebar import Sidebar
 from ui.file_list import FileList
 import threading
 import time
+import os
 
-ctk.set_appearance_mode("dark")
+ctk.set_appearance_mode("light")  # Start with light mode
 ctk.set_default_color_theme("blue")
 
 class MainWindow(ctk.CTk):
@@ -13,8 +14,8 @@ class MainWindow(ctk.CTk):
 
         self.title("Smart File Manager")
         self.geometry("1350x780")
-        # Exact deep teal background for dark, soft gray for light
-        self.configure(fg_color=("#F3F4F6", "#050C0F"))
+        # Modern minimal backgrounds
+        self.configure(fg_color=("#F5F5F5", "#111827"))
         
         # Animation states
         self.ai_pulse_state = False
@@ -44,126 +45,101 @@ class MainWindow(ctk.CTk):
         title_frame = ctk.CTkFrame(left, fg_color="transparent")
         title_frame.pack(anchor="w")
 
-        title_1 = ctk.CTkLabel(title_frame, text="Smart ", font=("Inter", 22, "bold"), text_color=("#111827", "#FFFFFF"))
+        title_1 = ctk.CTkLabel(title_frame, text="Smart ", font=("Inter", 22, "bold"), text_color=("#1F2937", "#F9FAFB"))
         title_1.pack(side="left")
-        title_2 = ctk.CTkLabel(title_frame, text="File Manager", font=("Inter", 22, "bold"), text_color=("#0D9488", "#00E5FF"))
+        title_2 = ctk.CTkLabel(title_frame, text="File Manager", font=("Inter", 22, "bold"), text_color=("#6366F1", "#818CF8"))
         title_2.pack(side="left")
 
-        subtitle = ctk.CTkLabel(left, text="Manage your files smarter with AI", font=("Inter", 13), text_color=("#6B7280", "#809A9E"))
+        subtitle = ctk.CTkLabel(left, text="Manage your files smarter with AI", font=("Inter", 13), text_color=("#6B7280", "#9CA3AF"))
         subtitle.pack(anchor="w", pady=(2, 0))
+
+        self.breadcrumb_frame = ctk.CTkFrame(left, fg_color="transparent")
+        self.breadcrumb_frame.pack(anchor="w", pady=(6, 0))
+        self.path_label = ctk.CTkLabel(self.breadcrumb_frame, text=".", font=("Inter", 12, "bold"), text_color=("#6B7280", "#9CA3AF"))
+        self.path_label.pack(anchor="w")
 
         right = ctk.CTkFrame(frame, fg_color="transparent")
         right.pack(side="right", padx=10, pady=20)
 
-        self.theme_switch = ctk.CTkSwitch(
+        self.theme_btn = ctk.CTkButton(
             right,
-            text="Theme",
-            command=self.toggle_theme,
-            progress_color=("#0D9488", "#00E5FF"),
-            font=("Inter", 12),
-            text_color=("#111827", "#F8FAFC")
+            text=self.get_theme_icon(),
+            width=28,
+            height=28,
+            corner_radius=14,
+            fg_color="transparent",
+            border_width=1,
+            border_color=("#E5E7EB", "#374151"),
+            hover_color=("#E5E7EB", "#374151"),
+            text_color=("#111827", "#F9FAFB"),
+            font=("Inter", 16),
+            command=self.toggle_theme
         )
-        self.theme_switch.pack(side="right", padx=15)
+        self.theme_btn.pack(side="right", padx=10)
 
-        search = ctk.CTkEntry(right, width=220, height=36, corner_radius=18, placeholder_text="Search files...", fg_color=("#FFFFFF", "#061519"), border_color=("#E5E7EB", "#10353A"), border_width=1, text_color=("#111827", "#FFFFFF"), font=("Inter", 12))
+        search = ctk.CTkEntry(right, width=220, height=36, corner_radius=18, placeholder_text="Search files...", fg_color=("#FFFFFF", "#1F2937"), border_color=("#E5E7EB", "#374151"), border_width=1, text_color=("#1F2937", "#F9FAFB"), font=("Inter", 12))
         search.pack(side="right", padx=15)
-        search.bind("<FocusIn>", lambda e: search.configure(border_color=("#0D9488", "#00E5FF")))
-        search.bind("<FocusOut>", lambda e: search.configure(border_color=("#E5E7EB", "#10353A")))
+        search.bind("<FocusIn>", lambda e: search.configure(border_color=("#6366F1", "#818CF8")))
+        search.bind("<FocusOut>", lambda e: search.configure(border_color=("#E5E7EB", "#374151")))
 
-        self.ai_button = ctk.CTkButton(right, text="✨ AI Scan", width=90, height=36, corner_radius=8, command=self.show_ai_popup, fg_color=("#0D9488", "#005C66"), hover_color=("#0F766E", "#008080"), text_color="#FFFFFF", font=("Inter", 12, "bold"))
-        self.ai_button.pack(side="right", padx=8)
-
-        self.browse_btn = ctk.CTkButton(right, text="📁 Browse", width=90, height=36, corner_radius=8, fg_color="transparent", border_color=("#0D9488", "#00E5FF"), border_width=1, hover_color=("#CCFBF1", "#051C21"), text_color=("#0D9488", "#00E5FF"), command=self.open_folder_dialog, font=("Inter", 12))
+        self.browse_btn = ctk.CTkButton(
+            right,
+            text="📁 Browse",
+            width=88,
+            height=34,
+            corner_radius=10,
+            fg_color=("#FFFFFF", "#1F2937"),
+            border_color=("#6366F1", "#818CF8"),
+            border_width=1,
+            hover_color=("#F3F4F6", "#374151"),
+            text_color=("#6366F1", "#818CF8"),
+            command=self.open_folder_dialog,
+            font=("Inter", 12)
+        )
         self.browse_btn.pack(side="right", padx=8)
 
         return frame
     
-    def animate_ai_pulse(self):
-        """Pulse animation for AI button"""
-        def pulse():
-            while True:
-                try:
-                    current_color = self.ai_button.cget("fg_color")
-                    next_color = "#6d28d9" if current_color == "#7c3aed" else "#7c3aed"
-                    self.ai_button.configure(fg_color=next_color)
-                    time.sleep(0.8)
-                except:
-                    break
-        
-        threading.Thread(target=pulse, daemon=True).start()
-
     def create_preview_panel(self):
-        frame_bg = ("#FFFFFF", "#061519")
-        text_color = ("#111827", "#FFFFFF")
-        indicator_color = ("#0D9488", "#00E5FF")
+        frame_bg = ("#FFFFFF", "#1F2937")
+        text_color = ("#1F2937", "#F9FAFB")
+        indicator_color = ("#6366F1", "#818CF8")
         
-        frame = ctk.CTkFrame(self, fg_color=frame_bg, border_width=1, border_color=("#E5E7EB", "#10353A"), corner_radius=12)
+        frame = ctk.CTkFrame(self, fg_color=frame_bg, border_width=1, border_color=("#E5E7EB", "#374151"), corner_radius=12)
 
         header = ctk.CTkFrame(frame, fg_color="transparent", height=40)
         header.pack(fill="x", padx=20, pady=(20, 10))
         
-        preview_label = ctk.CTkLabel(header, text="Details", font=("Inter", 16, "bold"), text_color=text_color)
+        preview_label = ctk.CTkLabel(header, text="Selection", font=("Inter", 14, "bold"), text_color=text_color)
         preview_label.pack(side="left")
-        
-        indicator = ctk.CTkLabel(header, text="●", text_color=indicator_color, font=("Inter", 10))
-        indicator.pack(side="right")
 
         # Details Content Frame
         self.preview_box = ctk.CTkFrame(frame, fg_color="transparent")
         self.preview_box.pack(fill="both", expand=True, padx=20, pady=0)
 
-        # File Details Header
-        fd_header = ctk.CTkLabel(self.preview_box, text="📄 File Details", font=("Inter", 13, "bold"), text_color=("#0D9488", "#00E5FF"))
-        fd_header.pack(anchor="w", pady=(0, 15))
+        self.preview_msg = ctk.CTkLabel(self.preview_box, text="No file selected.", font=("Inter", 12), text_color=("#6B7280", "#9CA3AF"), justify="left")
+        self.preview_msg.pack(anchor="w", pady=(0, 12))
 
-        # Labels
-        self.lbl_name_title = ctk.CTkLabel(self.preview_box, text="Name", font=("Inter", 11), text_color=("#6B7280", "#809A9E"))
-        self.lbl_name_title.pack(anchor="w")
-        self.lbl_name_val = ctk.CTkLabel(self.preview_box, text="-", font=("Inter", 12), text_color=("#111827", "#E0E0E0"))
-        self.lbl_name_val.pack(anchor="w", pady=(0, 10))
+        ai_header = ctk.CTkLabel(self.preview_box, text="AI Insights", font=("Inter", 12, "bold"), text_color=("#6B7280", "#9CA3AF"))
+        ai_header.pack(anchor="w", pady=(0, 8))
 
-        self.lbl_path_title = ctk.CTkLabel(self.preview_box, text="Path", font=("Inter", 11), text_color=("#6B7280", "#809A9E"))
-        self.lbl_path_title.pack(anchor="w")
-        self.lbl_path_val = ctk.CTkLabel(self.preview_box, text="-", font=("Inter", 12), text_color=("#111827", "#E0E0E0"))
-        self.lbl_path_val.pack(anchor="w", pady=(0, 10))
+        self.lbl_ai_val = ctk.CTkLabel(self.preview_box, text="Select a file to enable AI insights.", font=("Inter", 12), text_color=("#111827", "#E0E0E0"), justify="left")
+        self.lbl_ai_val.pack(anchor="w", pady=(0, 10))
 
-        self.lbl_size_title = ctk.CTkLabel(self.preview_box, text="Size", font=("Inter", 11), text_color=("#6B7280", "#809A9E"))
-        self.lbl_size_title.pack(anchor="w")
-        self.lbl_size_val = ctk.CTkLabel(self.preview_box, text="-", font=("Inter", 12), text_color=("#111827", "#E0E0E0"))
-        self.lbl_size_val.pack(anchor="w", pady=(0, 10))
-
-        self.lbl_mod_title = ctk.CTkLabel(self.preview_box, text="Modified", font=("Inter", 11), text_color=("#6B7280", "#809A9E"))
-        self.lbl_mod_title.pack(anchor="w")
-        self.lbl_mod_val = ctk.CTkLabel(self.preview_box, text="-", font=("Inter", 12), text_color=("#111827", "#E0E0E0"))
-        self.lbl_mod_val.pack(anchor="w", pady=(0, 15))
-
-        separator = ctk.CTkFrame(self.preview_box, height=1, fg_color=("#E5E7EB", "#10353A"))
-        separator.pack(fill="x", pady=(0, 15))
-
-        ai_header = ctk.CTkLabel(self.preview_box, text="✨ AI Insights", font=("Inter", 13, "bold"), text_color=("#0D9488", "#00E5FF"))
-        ai_header.pack(anchor="w", pady=(0, 10))
-
-        self.lbl_ai_val = ctk.CTkLabel(self.preview_box, text="- Pending Scan...\n(Click AI Scan button)", font=("Inter", 11), text_color=("#111827", "#E0E0E0"), justify="left")
-        self.lbl_ai_val.pack(anchor="w")
-
-        # Quick Actions Section
-        qa_frame = ctk.CTkFrame(frame, fg_color="transparent")
-        qa_frame.pack(fill="x", side="bottom", padx=20, pady=20)
-        
-        qa_label = ctk.CTkLabel(qa_frame, text="⚡ Quick Actions", font=("Inter", 12, "bold"), text_color=("#111827", "#FFFFFF"))
-        qa_label.pack(anchor="w", pady=(0, 10))
-        
-        btns_frame = ctk.CTkFrame(qa_frame, fg_color="transparent")
-        btns_frame.pack(fill="x")
-        
-        btn1 = ctk.CTkButton(btns_frame, text="📁 Open", width=70, height=32, corner_radius=8, fg_color="transparent", border_width=1, border_color=("#0D9488", "#008080"), text_color=("#0D9488", "#FFFFFF"), hover_color=("#CCFBF1", "#051C21"), font=("Inter", 11))
-        btn1.pack(side="left", padx=(0, 5))
-        
-        btn2 = ctk.CTkButton(btns_frame, text="📂 Reveal", width=90, height=32, corner_radius=8, fg_color="transparent", border_width=1, border_color=("#0D9488", "#008080"), text_color=("#0D9488", "#FFFFFF"), hover_color=("#CCFBF1", "#051C21"), font=("Inter", 11))
-        btn2.pack(side="left", padx=5)
-
-        btn3 = ctk.CTkButton(btns_frame, text="✨ AI Scan", width=80, height=32, corner_radius=8, fg_color=("#0D9488", "#005C66"), border_width=1, border_color=("#0D9488", "#008080"), hover_color=("#0F766E", "#008080"), text_color="#FFFFFF", font=("Inter", 11))
-        btn3.pack(side="right")
+        self.ai_button = ctk.CTkButton(
+            self.preview_box,
+            text="Run AI Scan",
+            width=120,
+            height=34,
+            corner_radius=8,
+            fg_color=("#6366F1", "#818CF8"),
+            hover_color=("#818CF8", "#4F46E5"),
+            text_color="#FFFFFF",
+            font=("Inter", 11, "bold"),
+            command=self.show_ai_popup,
+            state="disabled"
+        )
+        self.ai_button.pack(anchor="w", pady=(10, 0))
 
         return frame
 
@@ -171,14 +147,12 @@ class MainWindow(ctk.CTk):
         """Open a dialog to select a folder from the PC and load its files."""
         folder_path = ctk.filedialog.askdirectory(title="Select Folder to Manage")
         if folder_path:
-            self.file_list.load_files(directory=folder_path)
+            self.file_list.load_files(directory=folder_path, reset_root=True)
 
     def update_preview(self, name, full_path=None):
         # Extract filename by removing the emoji prefix if any
         display_name = name.split(" ", 1)[-1] if " " in name else name
         self.selected_file = full_path if full_path else display_name
-        
-        self.preview_box.delete("1.0", "end")
         
         import time
         from datetime import datetime
@@ -193,24 +167,88 @@ class MainWindow(ctk.CTk):
             mod_time = os.path.getmtime(full_path)
             file_date = datetime.fromtimestamp(mod_time).strftime('%Y-%m-%d %H:%M')
 
-        # Update labels with actual file data
-        self.lbl_name_val.configure(text=display_name)
-        self.lbl_path_val.configure(text=self.selected_file)
-        self.lbl_size_val.configure(text=file_size)
-        self.lbl_mod_val.configure(text=file_date)
+        # Update status when a file is selected
+        self.preview_msg.configure(text=f"Selected: {display_name}")
+        self.lbl_ai_val.configure(text="Ready to run AI scan.")
+        self.ai_button.configure(state="normal")
+
+    def get_theme_icon(self):
+        return "☀️" if ctk.get_appearance_mode() == "Light" else "🌙"
+
     def toggle_theme(self):
         current = ctk.get_appearance_mode()
-        new_mode = "light" if current == "Dark" else "dark"
+        new_mode = "Light" if current == "Dark" else "Dark"
         ctk.set_appearance_mode(new_mode)
-        
+        self.theme_btn.configure(text=self.get_theme_icon())
         # Update all UI components with new colors
         self.after(100, self.refresh_ui_colors)
-    
+
+    def update_path_label(self, rel_path):
+        for widget in self.breadcrumb_frame.winfo_children():
+            widget.destroy()
+
+        if rel_path is None:
+            placeholder = ctk.CTkLabel(self.breadcrumb_frame, text=".", font=("Inter", 12, "bold"), text_color=("#6B7280", "#9CA3AF"))
+            placeholder.pack(anchor="w")
+            return
+
+        root = os.path.basename(self.file_list.root_directory) or self.file_list.root_directory
+        root_button = ctk.CTkButton(
+            self.breadcrumb_frame,
+            text=root,
+            command=lambda p=self.file_list.root_directory: self.file_list.load_files(p),
+            fg_color="transparent",
+            hover_color=("#E5E7EB", "#374151"),
+            text_color=("#6B7280", "#9CA3AF"),
+            font=("Inter", 12, "bold"),
+            width=1,
+            height=24,
+            corner_radius=0
+        )
+        root_button.pack(side="left")
+
+        if rel_path != ".":
+            path_so_far = self.file_list.root_directory
+            for part in rel_path.split("/"):
+                separator = ctk.CTkLabel(self.breadcrumb_frame, text=" / ", font=("Inter", 12), text_color=("#9CA3AF", "#93A7B0"))
+                separator.pack(side="left")
+                path_so_far = os.path.join(path_so_far, part)
+                crumb = ctk.CTkButton(
+                    self.breadcrumb_frame,
+                    text=part,
+                    command=lambda p=path_so_far: self.file_list.load_files(p),
+                    fg_color="transparent",
+                    hover_color=("#E5E7EB", "#374151"),
+                    text_color=("#6B7280", "#9CA3AF"),
+                    font=("Inter", 12),
+                    width=1,
+                    height=24,
+                    corner_radius=0
+                )
+                crumb.pack(side="left")
+
+    def go_to_parent(self):
+        current = getattr(self.file_list, "current_directory", None)
+        root = getattr(self.file_list, "root_directory", None)
+        if not current or not root:
+            return
+
+        current_abs = os.path.abspath(current)
+        root_abs = os.path.abspath(root)
+        if current_abs == root_abs:
+            return
+
+        parent = os.path.dirname(current_abs)
+        if parent.startswith(root_abs):
+            self.file_list.load_files(parent)
+
     def refresh_ui_colors(self):
         """Refresh all UI colors for theme change"""
         # Since we use tuple colors, CTk handles the UI refresh automatically!
-        # We only need to reload dynamic file data (if colors are generated per-row)
-        self.file_list.load_files()
+        if self.file_list.current_directory is None:
+            self.file_list.show_welcome()
+        else:
+            self.file_list.load_files(directory=self.file_list.current_directory)
         self.sidebar.update_colors()
 
     def show_ai_popup(self):

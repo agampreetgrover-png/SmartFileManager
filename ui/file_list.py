@@ -16,42 +16,111 @@ class FileList(ctk.CTkFrame):
         super().__init__(master, fg_color="transparent")
 
         self.master = master
-        self.scroll = ctk.CTkScrollableFrame(self, corner_radius=12, border_width=1, border_color="#10353A")
+        self.scroll = ctk.CTkScrollableFrame(self, corner_radius=12, border_width=1, border_color=("#E5E7EB", "#374151"))
         self.scroll.pack(fill="both", expand=True)
 
-        self.load_files()
+        self.current_directory = None
+        self.show_welcome()
+
+    def show_welcome(self):
+        """Show welcome message when no directory is selected"""
+        colors = self.get_colors()
+        self.scroll.configure(fg_color=colors["panel_bg"])
+
+        # Clear existing
+        for widget in self.scroll.winfo_children():
+            widget.destroy()
+
+        # Welcome content
+        welcome_frame = ctk.CTkFrame(self.scroll, fg_color="transparent")
+        welcome_frame.pack(expand=True, fill="both", padx=40, pady=40)
+
+        welcome_label = ctk.CTkLabel(
+            welcome_frame,
+            text="Welcome to Smart File Manager",
+            font=("Inter", 24, "bold"),
+            text_color=colors["text_primary"]
+        )
+        welcome_label.pack(pady=(0, 20))
+
+        subtitle = ctk.CTkLabel(
+            welcome_frame,
+            text="Click 'Browse' to select a folder and start managing your files.",
+            font=("Inter", 14),
+            text_color=colors["text_secondary"]
+        )
+        subtitle.pack(pady=(0, 30))
+
+        # Optional: Add some tips or features
+        tips_frame = ctk.CTkFrame(welcome_frame, fg_color=colors["card_bg"], corner_radius=8, border_width=1, border_color=colors["card_border"])
+        tips_frame.pack(fill="x", pady=(0, 20))
+
+        tips_title = ctk.CTkLabel(tips_frame, text="✨ Features", font=("Inter", 16, "bold"), text_color=colors["text_primary"])
+        tips_title.pack(pady=(15, 10), padx=20)
+
+        tips = [
+            "• Organize files with AI-powered classification",
+            "• Clean, modern interface with dark/light modes",
+            "• Fast search and file browsing",
+            "• Smart file management tools"
+        ]
+
+        for tip in tips:
+            tip_label = ctk.CTkLabel(tips_frame, text=tip, font=("Inter", 12), text_color=colors["text_secondary"], anchor="w")
+            tip_label.pack(fill="x", padx=20, pady=2)
+
+        tips_title.pack(pady=(10, 15))  # Close padding
 
     def get_colors(self):
         """Get theme-aware colors"""
         return {
-            "panel_bg": ("#FFFFFF", "#061519"),
-            "header_border": ("#E5E7EB", "#10353A"),
-            "card_bg": ("#FFFFFF", "#071E22"),
-            "card_hover": ("#F9FAFB", "#0A262A"),
-            "card_border": ("#FFFFFF", "#071E22"),
-            "card_border_hover": ("#E5E7EB", "#10353A"),
-            "text_primary": ("#111827", "#E0E0E0"),
-            "text_secondary": ("#6B7280", "#809A9E"),
-            "text_hover": ("#111827", "#FFFFFF")
+            "panel_bg": ("#F5F5F5", "#111827"),
+            "header_border": ("#E5E7EB", "#374151"),
+            "card_bg": ("#FFFFFF", "#1F2937"),
+            "card_hover": ("#F9FAFB", "#374151"),
+            "card_border": ("#FFFFFF", "#1F2937"),
+            "card_border_hover": ("#E5E7EB", "#374151"),
+            "text_primary": ("#1F2937", "#F9FAFB"),
+            "text_secondary": ("#6B7280", "#9CA3AF"),
+            "text_hover": ("#1F2937", "#F9FAFB")
         }
 
-    def load_files(self, directory="."):
+    def load_files(self, directory=None, reset_root=False):
+        if directory is None:
+            self.current_directory = None
+            self.show_welcome()
+            self.master.update_path_label(None)
+            return
+
+        if reset_root or self.current_directory is None:
+            self.root_directory = directory
+
         self.current_directory = directory
+        rel_path = os.path.relpath(directory, self.root_directory) if hasattr(self, 'root_directory') else "."
+        rel_path = "." if rel_path == "." else rel_path.replace('\\', '/')
+        self.master.update_path_label(rel_path)
+
         # Clear existing file cards
         for widget in self.scroll.winfo_children():
             widget.destroy()
 
         files = []
         try:
-            for f in os.listdir(directory):
+            if hasattr(self, 'root_directory') and self.current_directory != self.root_directory:
+                files.append(("...", "", "", True, True))
+
+            for f in sorted(os.listdir(directory), key=lambda x: (not os.path.isdir(os.path.join(directory, x)), x.lower())):
                 path = os.path.join(directory, f)
-                if os.path.isfile(path):
-                    size = os.path.getsize(path)
-                    mod_time = os.path.getmtime(path)
-                    date_str = datetime.fromtimestamp(mod_time).strftime('%Y-%m-%d %H:%M')
-                    files.append((f, format_size(size), date_str))
+                mod_time = os.path.getmtime(path)
+                date_str = datetime.fromtimestamp(mod_time).strftime('%Y-%m-%d %H:%M')
+                if os.path.isdir(path):
+                    size = "—"
+                    files.append((f, size, date_str, True, False))
+                else:
+                    size = format_size(os.path.getsize(path))
+                    files.append((f, size, date_str, False, False))
         except Exception as e:
-            files.append((f"Error reading directory: {e}", "", ""))
+            files.append((f"Error reading directory: {e}", "", "", False, False))
 
         colors = self.get_colors()
         self.scroll.configure(fg_color=colors["panel_bg"])
@@ -67,28 +136,43 @@ class FileList(ctk.CTkFrame):
         header_frame.grid_columnconfigure(2, weight=1)
         header_frame.grid_columnconfigure(3, weight=1)
 
-        ctk.CTkLabel(header_frame, text="Name", font=("Inter", 11, "bold"), text_color=("#0D9488", "#00E5FF")).grid(row=0, column=0, sticky="w", padx=10)
-        ctk.CTkLabel(header_frame, text="Size", font=("Inter", 11, "bold"), text_color=("#0D9488", "#00E5FF")).grid(row=0, column=1, sticky="w")
-        ctk.CTkLabel(header_frame, text="Date Modified", font=("Inter", 11, "bold"), text_color=("#0D9488", "#00E5FF")).grid(row=0, column=2, sticky="w", padx=15)
-        ctk.CTkLabel(header_frame, text="Type", font=("Inter", 11, "bold"), text_color=("#0D9488", "#00E5FF")).grid(row=0, column=3, sticky="w", padx=10)
+        ctk.CTkLabel(header_frame, text="Name", font=("Inter", 11, "bold"), text_color=("#6366F1", "#818CF8")).grid(row=0, column=0, sticky="w", padx=10)
+        ctk.CTkLabel(header_frame, text="Size", font=("Inter", 11, "bold"), text_color=("#6366F1", "#818CF8")).grid(row=0, column=1, sticky="w")
+        ctk.CTkLabel(header_frame, text="Date Modified", font=("Inter", 11, "bold"), text_color=("#6366F1", "#818CF8")).grid(row=0, column=2, sticky="w", padx=15)
+        ctk.CTkLabel(header_frame, text="Type", font=("Inter", 11, "bold"), text_color=("#6366F1", "#818CF8")).grid(row=0, column=3, sticky="w", padx=10)
 
         # Subtle separator line below headers
         separator = ctk.CTkFrame(header_wrapper, height=1, fg_color=colors["header_border"])
         separator.pack(fill="x", pady=(8, 0))
 
-        for name, size, date in files:
-            ext = name.split(".")[-1].lower() if "." in name else ""
-            icon = "📄"
-            if ext in ["jpg", "png", "jpeg", "gif", "webp"]: icon = "🖼️"
-            elif ext in ["mp4", "mkv", "avi", "mov"]: icon = "🎬"
-            elif ext in ["mp3", "wav", "flac"]: icon = "🎵"
-            elif ext in ["zip", "rar", "tar", "gz"]: icon = "📦"
-            elif ext in ["pdf"]: icon = "📕"
-            elif ext in ["doc", "docx", "txt"]: icon = "📝"
-            elif ext in ["py", "js", "html", "css", "json", "md"]: icon = "💻"
-            elif os.path.isdir(os.path.join(self.current_directory, name)): icon = "📁"
-            
-            display_name = f"{icon}  {name}"
+        for name, size, date, is_dir, is_special in files:
+            if is_special:
+                icon = "↩"
+                display_name = "..."
+                ext_label = "UP"
+            elif is_dir:
+                icon = "📁"
+                ext_label = "DIR"
+                display_name = f"{icon}  {name}"
+            else:
+                ext = name.split(".")[-1].lower() if "." in name else ""
+                icon = "📄"
+                if ext in ["jpg", "png", "jpeg", "gif", "webp"]:
+                    icon = "🖼️"
+                elif ext in ["mp4", "mkv", "avi", "mov"]:
+                    icon = "🎬"
+                elif ext in ["mp3", "wav", "flac"]:
+                    icon = "🎵"
+                elif ext in ["zip", "rar", "tar", "gz"]:
+                    icon = "📦"
+                elif ext in ["pdf"]:
+                    icon = "📕"
+                elif ext in ["doc", "docx", "txt"]:
+                    icon = "📝"
+                elif ext in ["py", "js", "html", "css", "json", "md"]:
+                    icon = "💻"
+                ext_label = ext.upper() if ext else "FILE"
+                display_name = f"{icon}  {name}"
 
             card = ctk.CTkFrame(
                 self.scroll, 
@@ -132,13 +216,18 @@ class FileList(ctk.CTkFrame):
             )
             date_label.grid(row=0, column=2, padx=15, sticky="w")
 
-            type_frame = ctk.CTkFrame(card, fg_color=("#CCFBF1", "#052E33"), corner_radius=10, height=20)
-            type_frame.grid(row=0, column=3, sticky="w", padx=10)
-            type_label = ctk.CTkLabel(type_frame, text=ext.upper() if ext else "FILE", font=("Inter", 9, "bold"), text_color=("#0D9488", "#00E5FF"))
-            type_label.pack(padx=8, pady=2)
+            type_label = ctk.CTkLabel(
+                card,
+                text=ext_label,
+                font=("Inter", 10, "bold"),
+                text_color=colors["text_secondary"],
+                fg_color="transparent"
+            )
+            type_label.grid(row=0, column=3, sticky="w", padx=10)
 
-            dots_label = ctk.CTkLabel(card, text="⋮", font=("Inter", 16, "bold"), text_color=colors["text_secondary"])
-            dots_label.grid(row=0, column=4, padx=15)
+            if not is_special:
+                dots_label = ctk.CTkLabel(card, text="⋮", font=("Inter", 16, "bold"), text_color=colors["text_secondary"])
+                dots_label.grid(row=0, column=4, padx=15)
 
             # Direct hover effects using immediate state changes
             def on_enter(e, c=card, label=name_label, colors=colors):
@@ -149,7 +238,7 @@ class FileList(ctk.CTkFrame):
                 c.configure(fg_color=colors["card_bg"], border_color=colors["card_border"])
                 label.configure(text_color=colors["text_primary"])
 
-            card.bind("<Button-1>", lambda e, n=name: self.select_file(n))
+            card.bind("<Button-1>", lambda e, n=name, d=is_dir, s=is_special: self.open_item(n, d, s))
             card.bind("<Enter>", on_enter)
             card.bind("<Leave>", on_leave)
 
@@ -157,6 +246,18 @@ class FileList(ctk.CTkFrame):
         footer = ctk.CTkLabel(self.scroll, text=f"{len(files)} items", font=("Inter", 11), text_color=("#6B7280", "#809A9E"))
         footer.pack(pady=20)
 
-    def select_file(self, name):
+    def open_item(self, name, is_dir, is_special=False):
+        if is_special:
+            parent = os.path.dirname(self.current_directory)
+            root = getattr(self, 'root_directory', None)
+            if root and os.path.abspath(parent).startswith(os.path.abspath(root)):
+                self.load_files(parent)
+            else:
+                self.load_files(root)
+            return
+
         full_path = os.path.join(getattr(self, 'current_directory', '.'), name)
-        self.master.update_preview(name, full_path)
+        if is_dir:
+            self.load_files(full_path)
+        else:
+            self.master.update_preview(name, full_path)
