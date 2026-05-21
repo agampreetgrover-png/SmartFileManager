@@ -70,6 +70,11 @@ class FileList(ctk.CTkFrame):
             tip_label.pack(fill="x", padx=20, pady=2)
 
         tips_title.pack(pady=(10, 15))  # Close padding
+        # Notify parent that there is no active folder
+        try:
+            self.master.on_folder_changed()
+        except Exception:
+            pass
 
     def get_colors(self):
         """Get theme-aware colors"""
@@ -245,6 +250,11 @@ class FileList(ctk.CTkFrame):
         # Footer items count
         footer = ctk.CTkLabel(self.scroll, text=f"{len(files)} items", font=("Inter", 11), text_color=("#6B7280", "#809A9E"))
         footer.pack(pady=20)
+        # Notify parent that folder changed (enable/disable controls)
+        try:
+            self.master.on_folder_changed()
+        except Exception:
+            pass
 
     def open_item(self, name, is_dir, is_special=False):
         if is_special:

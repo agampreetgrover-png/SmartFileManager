@@ -1,3 +1,4 @@
 # Initializes core package
 from .database import Database
-from .classifier import SmartClassifier
+# Export the rule-based classifier API
+from .classifier import classify_file, rule_based_classify

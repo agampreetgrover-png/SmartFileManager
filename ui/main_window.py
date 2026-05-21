@@ -4,6 +4,7 @@ from ui.file_list import FileList
 import threading
 import time
 import os
+from app_bridge import App
 
 ctk.set_appearance_mode("light")  # Start with light mode
 ctk.set_default_color_theme("blue")
@@ -32,6 +33,9 @@ class MainWindow(ctk.CTk):
 
         self.file_list = FileList(self)
         self.file_list.grid(row=1, column=1, sticky="nsew", padx=(10, 20), pady=(0, 20))
+
+        # Bridge to backend
+        self.bridge = App
 
         self.preview = self.create_preview_panel()
         self.preview.grid(row=1, column=2, sticky="nsew", padx=(0, 20), pady=(0, 20))
@@ -110,36 +114,65 @@ class MainWindow(ctk.CTk):
         header = ctk.CTkFrame(frame, fg_color="transparent", height=40)
         header.pack(fill="x", padx=20, pady=(20, 10))
         
-        preview_label = ctk.CTkLabel(header, text="Selection", font=("Inter", 14, "bold"), text_color=text_color)
+        preview_label = ctk.CTkLabel(header, text="Selection", font=("Inter", 12, "bold"), text_color=text_color)
         preview_label.pack(side="left")
 
-        # Details Content Frame
+        # Compact selection controls (very small)
         self.preview_box = ctk.CTkFrame(frame, fg_color="transparent")
-        self.preview_box.pack(fill="both", expand=True, padx=20, pady=0)
+        self.preview_box.pack(fill="both", expand=True, padx=12, pady=8)
 
-        self.preview_msg = ctk.CTkLabel(self.preview_box, text="No file selected.", font=("Inter", 12), text_color=("#6B7280", "#9CA3AF"), justify="left")
-        self.preview_msg.pack(anchor="w", pady=(0, 12))
+        self.preview_msg = ctk.CTkLabel(self.preview_box, text="No file selected.", font=("Inter", 10), text_color=("#6B7280", "#9CA3AF"), justify="left")
+        self.preview_msg.pack(anchor="w", pady=(0, 6))
 
-        ai_header = ctk.CTkLabel(self.preview_box, text="AI Insights", font=("Inter", 12, "bold"), text_color=("#6B7280", "#9CA3AF"))
-        ai_header.pack(anchor="w", pady=(0, 8))
+        self.progress_bar = ctk.CTkProgressBar(self.preview_box, width=200, height=6, corner_radius=3, progress_color=("#6366F1", "#818CF8"))
+        self.progress_bar.set(0)
 
-        self.lbl_ai_val = ctk.CTkLabel(self.preview_box, text="Select a file to enable AI insights.", font=("Inter", 12), text_color=("#111827", "#E0E0E0"), justify="left")
-        self.lbl_ai_val.pack(anchor="w", pady=(0, 10))
+        controls = ctk.CTkFrame(self.preview_box, fg_color="transparent")
+        controls.pack(anchor="w")
+
+        self.type_sorter_btn = ctk.CTkButton(
+            controls,
+            text="Type Sorter",
+            width=110,
+            height=28,
+            corner_radius=8,
+            fg_color=("#E5E7EB", "#111827"),
+            hover_color=("#F3F4F6", "#374151"),
+            text_color=("#1F2937", "#F9FAFB"),
+            font=("Inter", 10, "bold"),
+            command=self.run_type_sorter,
+            state="disabled"
+        )
+        self.type_sorter_btn.pack(side="left", padx=(0, 8))
 
         self.ai_button = ctk.CTkButton(
-            self.preview_box,
-            text="Run AI Scan",
-            width=120,
-            height=34,
+            controls,
+            text="AI Scan",
+            width=90,
+            height=28,
             corner_radius=8,
             fg_color=("#6366F1", "#818CF8"),
             hover_color=("#818CF8", "#4F46E5"),
             text_color="#FFFFFF",
-            font=("Inter", 11, "bold"),
-            command=self.show_ai_popup,
+            font=("Inter", 10, "bold"),
+            command=self.run_ai_scan,
             state="disabled"
         )
-        self.ai_button.pack(anchor="w", pady=(10, 0))
+        self.ai_button.pack(side="left")
+
+        self.undo_btn = ctk.CTkButton(
+            controls,
+            text="Undo Scan",
+            width=80,
+            height=28,
+            corner_radius=8,
+            fg_color=("#EF4444", "#DC2626"),
+            hover_color=("#DC2626", "#B91C1C"),
+            text_color="#FFFFFF",
+            font=("Inter", 10, "bold"),
+            command=self.run_undo_scan,
+        )
+        self.undo_btn.pack(side="left", padx=(8, 0))
 
         return frame
 
@@ -169,8 +202,11 @@ class MainWindow(ctk.CTk):
 
         # Update status when a file is selected
         self.preview_msg.configure(text=f"Selected: {display_name}")
-        self.lbl_ai_val.configure(text="Ready to run AI scan.")
-        self.ai_button.configure(state="normal")
+        # Ensure type sorter is enabled when inside a folder
+        if getattr(self.file_list, 'current_directory', None):
+            self.type_sorter_btn.configure(state="normal")
+        else:
+            self.type_sorter_btn.configure(state="disabled")
 
     def get_theme_icon(self):
         return "☀️" if ctk.get_appearance_mode() == "Light" else "🌙"
@@ -251,87 +287,253 @@ class MainWindow(ctk.CTk):
             self.file_list.load_files(directory=self.file_list.current_directory)
         self.sidebar.update_colors()
 
-    def show_ai_popup(self):
-        if not hasattr(self, 'selected_file') or not self.selected_file:
-            # Show error in preview panel dynamically
-            self.lbl_ai_val.configure(text="[!] Please select a file first.")
+    def on_folder_changed(self):
+        # Called by FileList when the current folder changes
+        if getattr(self.file_list, 'current_directory', None):
+            try:
+                self.type_sorter_btn.configure(state="normal")
+                self.ai_button.configure(state="normal")
+            except Exception:
+                pass
+        else:
+            try:
+                self.type_sorter_btn.configure(state="disabled")
+                self.ai_button.configure(state="disabled")
+            except Exception:
+                pass
+
+    def run_type_sorter(self):
+        # Run rule-based classification across current directory
+        directory = getattr(self.file_list, 'current_directory', None)
+        if not directory:
+            self.preview_msg.configure(text="No folder open for Type Sorter.")
             return
 
-        win_bg = ("#F3F4F6", "#050C0F")
-        card_bg = ("#FFFFFF", "#061519")
-        card_border = ("#0D9488", "#00E5FF")
-        progress_bg = ("#F9FAFB", "#071E22")
-        progress_fill = ("#0D9488", "#00E5FF")
-        text_main = ("#111827", "#FFFFFF")
-        text_secondary = ("#6B7280", "#809A9E")
-        text_tertiary = ("#6B7280", "#809A9E")
-        btn_text = "#FFFFFF"
-        
+        summary = self.bridge.type_sorter(directory)
+        files = summary.get('files', [])
+
         win = ctk.CTkToplevel(self)
-        win.geometry("380x420")
-        win.title("AI Analysis")
-        win.configure(fg_color=win_bg)
-        win.attributes('-alpha', 0.98)
+        win.transient(self)
+        win.grab_set()
+        win.focus_force()
+        win.geometry("520x460")
+        win.title("Type Sorter Preview")
+        win.configure(fg_color=("#F3F4F6", "#071E22"))
 
-        card = ctk.CTkFrame(win, corner_radius=12, fg_color=card_bg, border_width=1, border_color=card_border)
-        card.pack(fill="both", expand=True, padx=20, pady=20)
+        header = ctk.CTkLabel(win, text=f"Type Sorter — {os.path.basename(directory)}", font=("Inter", 15, "bold"))
+        header.pack(pady=(12, 4))
 
-        header = ctk.CTkLabel(card, text="AI Classification", font=("Inter", 18, "bold"), text_color=text_main)
-        header.pack(pady=(15, 10))
-        
-        # Analyze the file using the bridge
-        file_path = self.selected_file
-        
-        # For testing purposes: Create dummy file if it doesn't exist so Ollama can read it
-        import os
-        if not os.path.exists(file_path):
-            with open(file_path, "w") as f:
-                f.write(f"This is a dummy content for {file_path}")
+        note = ctk.CTkLabel(win, text="Preview only: no files are moved until you confirm.", font=("Inter", 11), text_color=("#4B5563", "#9CA3AF"))
+        note.pack(pady=(0, 10))
 
-        # Call the backend
-        win.update() # Force UI update before blocking call
-        result = self.bridge.analyze_file(file_path)
-        
-        category = result.get("category", "Unknown")
-        confidence = result.get("confidence", 0.0)
-        source = result.get("source", "Unknown")
-        
-        progress_frame = ctk.CTkFrame(card, fg_color=progress_bg, corner_radius=8)
-        progress_frame.pack(pady=10, padx=15, fill="x")
-        
-        progress_bar = ctk.CTkProgressBar(progress_frame, fg_color=progress_fill, progress_color="#3b82f6")
-        progress_bar.pack(fill="x", padx=8, pady=8)
-        progress_bar.set(confidence)
-        
-        ctk.CTkLabel(card, text=f"Category: {category}", text_color=text_secondary, font=("Inter", 12)).pack()
-        ctk.CTkLabel(card, text=f"Source: {source}", text_color=text_tertiary, font=("Inter", 11)).pack()
-        conf_pct = int(confidence * 100)
-        ctk.CTkLabel(card, text=f"Confidence: {conf_pct}%", text_color=("#0D9488", "#00E5FF"), font=("Inter", 12, "bold")).pack(pady=(5, 15))
+        scroll = ctk.CTkScrollableFrame(win, fg_color=("#FFFFFF", "#1F2937"), border_width=1, corner_radius=10)
+        scroll.pack(fill="both", expand=True, padx=12, pady=8)
 
-        move_btn = ctk.CTkButton(card, text="Move to Suggested Folder", fg_color=("#0D9488", "#005C66"), hover_color=("#0F766E", "#008080"), text_color=btn_text, font=("Inter", 12, "bold"))
-        move_btn.pack(pady=10)
-        
-        def button_press():
-            move_btn.configure(text="✓ Moving...")
-            self.after(800, lambda: win.destroy())
-        
-        move_btn.configure(command=button_press)
+        if not files:
+            ctk.CTkLabel(scroll, text="No files found in this folder.", font=("Inter", 12), text_color=("#111827", "#F9FAFB")).pack(pady=20)
+        else:
+            grouped = {}
+            for item in files:
+                group = item.get('suggested_folder') or item.get('category') or 'Others'
+                grouped.setdefault(group, []).append(item.get('name', ''))
 
-        # Level 3 Feedback System UI
-        ctk.CTkLabel(card, text="Incorrect? Teach the AI:", text_color=text_secondary, font=("Segoe UI", 10)).pack(pady=(10, 0))
-        
-        correction_frame = ctk.CTkFrame(card, fg_color="transparent")
-        correction_frame.pack(pady=5)
-        
-        correct_entry = ctk.CTkEntry(correction_frame, placeholder_text="Correct Category", width=120, height=28)
-        correct_entry.pack(side="left", padx=5)
-        
-        def submit_correction():
-            new_cat = correct_entry.get().strip()
-            if new_cat:
-                self.bridge.user_correction(file_path, new_cat)
+            for group_name, file_names in sorted(grouped.items()):
+                section = ctk.CTkFrame(scroll, fg_color=("#F3F4F6", "#111827"), corner_radius=10)
+                section.pack(fill="x", padx=10, pady=8)
+
+                title = ctk.CTkLabel(section, text=f"{group_name} ({len(file_names)})", font=("Inter", 12, "bold"), anchor="w")
+                title.pack(fill="x", padx=12, pady=(10, 4))
+
+                body = ctk.CTkFrame(section, fg_color=("#FFFFFF", "#111827"), corner_radius=8)
+                body.pack(fill="x", padx=12, pady=(0, 10))
+
+                for file_name in file_names:
+                    item_row = ctk.CTkFrame(body, fg_color=("#F9FAFB", "#1F2937"), corner_radius=6)
+                    item_row.pack(fill="x", padx=6, pady=4)
+                    ctk.CTkLabel(item_row, text=file_name, font=("Inter", 10), anchor="w").pack(fill="x", padx=10, pady=6)
+
+        buttons = ctk.CTkFrame(win, fg_color="transparent")
+        buttons.pack(fill="x", padx=12, pady=(0, 12))
+
+        undo_btn = ctk.CTkButton(buttons, text="Undo", width=100, height=32, corner_radius=8, fg_color=("#E5E7EB", "#374151"), text_color=("#1F2937", "#F9FAFB"), command=win.destroy)
+        undo_btn.pack(side="left", padx=(0, 8))
+
+        go_btn = ctk.CTkButton(buttons, text="Go On", width=100, height=32, corner_radius=8, fg_color=("#10B981", "#065F46"), hover_color=("#059669", "#047857"), text_color="#FFFFFF", command=lambda: confirm_type_sorter())
+        go_btn.pack(side="right")
+
+        def confirm_type_sorter():
+            confirm = ctk.CTkToplevel(self)
+            confirm.transient(win)
+            confirm.grab_set()
+            confirm.focus_force()
+            confirm.geometry("360x180")
+            confirm.title("Confirm Type Sorter")
+            confirm.configure(fg_color=("#F3F4F6", "#071E22"))
+
+            ctk.CTkLabel(confirm, text="Are you sure?", font=("Inter", 15, "bold")).pack(pady=(20, 6))
+            ctk.CTkLabel(confirm, text="This will permanently move files to suggested folders.", font=("Inter", 11), text_color=("#4B5563", "#9CA3AF"), wraplength=320, justify="center").pack(pady=(0, 16))
+
+            action_frame = ctk.CTkFrame(confirm, fg_color="transparent")
+            action_frame.pack(pady=10)
+
+            cancel_btn = ctk.CTkButton(action_frame, text="Cancel", width=100, height=32, corner_radius=8, fg_color=("#E5E7EB", "#374151"), text_color=("#1F2937", "#F9FAFB"), command=confirm.destroy)
+            cancel_btn.pack(side="left", padx=8)
+
+            def apply_type_sorter():
+                confirm.destroy()
                 win.destroy()
-                self.lbl_ai_val.configure(text=f"[Feedback Saved]\nLearned: {new_cat}")
+                moves = []
+                for item in files:
+                    if not item.get('suggested_folder'):
+                        continue
+                    src = os.path.join(directory, item['name'])
+                    dst_dir = os.path.join(directory, item['suggested_folder'])
+                    dst = os.path.join(dst_dir, item['name'])
+                    if os.path.exists(src) and os.path.isfile(src):
+                        result = self.bridge.move_file(src, dst, commit=True)
+                        moves.append((item['name'], result))
 
-        correct_btn = ctk.CTkButton(correction_frame, text="Correct", width=60, height=28, fg_color="#6b7280", hover_color="#4b5563", command=submit_correction)
-        correct_btn.pack(side="left")
+                self.file_list.load_files(directory)
+                summary_text = f"Moved {sum(1 for _, r in moves if r.get('success'))} files."
+                self.preview_msg.configure(text=summary_text)
+
+            confirm_btn = ctk.CTkButton(action_frame, text="Confirm", width=100, height=32, corner_radius=8, fg_color=("#2563EB", "#1D4ED8"), hover_color=("#1E40AF", "#1D4ED8"), text_color="#FFFFFF", command=apply_type_sorter)
+            confirm_btn.pack(side="left", padx=8)
+
+    def run_ai_scan(self):
+        directory = getattr(self.file_list, 'current_directory', None)
+        if not directory:
+            self.preview_msg.configure(text="No folder open for AI Scan.")
+            return
+
+        self.preview_msg.configure(text="Starting AI Scan...")
+        self.ai_button.configure(state="disabled")
+        
+        # Show progress bar
+        self.progress_bar.pack(anchor="w", pady=(0, 10))
+        self.progress_bar.set(0)
+        self.update()
+
+        def update_progress(current, total, msg):
+            # Must run on main thread
+            self.after(0, lambda: self._update_progress_ui(current, total, msg))
+
+        def background_task():
+            # Run AI organization through the bridge
+            result = self.bridge.ai_organize_folder(directory, progress_callback=update_progress)
+            
+            # Schedule the UI update back on the main thread
+            self.after(0, lambda: self._on_ai_scan_complete(directory, result))
+            
+        threading.Thread(target=background_task, daemon=True).start()
+
+    def _update_progress_ui(self, current, total, msg):
+        self.preview_msg.configure(text=msg)
+        if total > 0:
+            self.progress_bar.set(current / total)
+        else:
+            self.progress_bar.set(0)
+
+    def _on_ai_scan_complete(self, directory, result):
+        self.ai_button.configure(state="normal")
+        self.progress_bar.pack_forget() # hide progress bar
+        if "error" in result:
+            self.preview_msg.configure(text=f"AI Error: {result['error']}")
+            return
+
+        self.preview_msg.configure(text="AI Scan complete!")
+        self.show_ai_scan_preview(directory, result)
+
+    def run_undo_scan(self):
+        result = self.bridge.undo_last_scan()
+        if "error" in result:
+            self.preview_msg.configure(text=result["error"])
+        else:
+            r = result.get("restored", 0)
+            f = result.get("failed", 0)
+            self.preview_msg.configure(text=f"Undo complete: {r} restored, {f} failed.")
+            if getattr(self.file_list, 'current_directory', None):
+                self.file_list.load_files(self.file_list.current_directory)
+
+    def show_ai_scan_preview(self, directory, result):
+        win = ctk.CTkToplevel(self)
+        win.transient(self)
+        win.grab_set()
+        win.focus_force()
+        win.geometry("1000x750")
+        win.resizable(True, True)
+        win.title("AI Organizer Preview")
+        win.configure(fg_color=("#F3F4F6", "#071E22"))
+
+        summary = result.get('summary', 'AI successfully organized your files.')
+        header = ctk.CTkLabel(win, text="AI Organizer Recommendations", font=("Inter", 16, "bold"))
+        header.pack(pady=(12, 4))
+        
+        note = ctk.CTkLabel(win, text=summary, font=("Inter", 11), text_color=("#4B5563", "#9CA3AF"), wraplength=550)
+        note.pack(pady=(0, 10))
+
+        scroll = ctk.CTkScrollableFrame(win, fg_color=("#FFFFFF", "#1F2937"), border_width=1, corner_radius=10)
+        scroll.pack(fill="both", expand=True, padx=12, pady=8)
+
+        groups = result.get('groups', [])
+        batch_id = result.get('batch_id')
+        
+        if not groups:
+            ctk.CTkLabel(scroll, text="No files were organized.", font=("Inter", 12), text_color=("#111827", "#F9FAFB")).pack(pady=20)
+        else:
+            for group in groups:
+                group_name = group.get('folder_name', 'Unknown Folder')
+                files = group.get('files', [])
+                
+                section = ctk.CTkFrame(scroll, fg_color=("#F3F4F6", "#111827"), corner_radius=10)
+                section.pack(fill="x", padx=10, pady=8)
+
+                title = ctk.CTkLabel(section, text=f"{group_name} ({len(files)})", font=("Inter", 12, "bold"), anchor="w")
+                title.pack(fill="x", padx=12, pady=(10, 4))
+
+                body = ctk.CTkFrame(section, fg_color=("#FFFFFF", "#111827"), corner_radius=8)
+                body.pack(fill="x", padx=12, pady=(0, 10))
+
+                for item in files:
+                    item_row = ctk.CTkFrame(body, fg_color=("#F9FAFB", "#1F2937"), corner_radius=6)
+                    item_row.pack(fill="x", padx=6, pady=4)
+                    
+                    file_name = item.get('file_name', 'Unknown')
+                    original = item.get('original_path', file_name)
+                    
+                    text_str = f"File: {original}"
+                    ctk.CTkLabel(item_row, text=text_str, font=("Inter", 10), justify="left", anchor="w", wraplength=480).pack(fill="x", padx=10, pady=6)
+
+        buttons = ctk.CTkFrame(win, fg_color="transparent")
+        buttons.pack(fill="x", padx=12, pady=(0, 12))
+
+        undo_btn = ctk.CTkButton(buttons, text="Cancel", width=100, height=32, corner_radius=8, fg_color=("#E5E7EB", "#374151"), text_color=("#1F2937", "#F9FAFB"), command=win.destroy)
+        undo_btn.pack(side="left", padx=(0, 8))
+
+        go_btn = ctk.CTkButton(buttons, text="Apply Recommendations", width=160, height=32, corner_radius=8, fg_color=("#8B5CF6", "#6D28D9"), hover_color=("#7C3AED", "#5B21B6"), text_color="#FFFFFF", command=lambda: apply_ai_scan())
+        go_btn.pack(side="right")
+
+        def apply_ai_scan():
+            win.destroy()
+            moves = 0
+            for group in groups:
+                folder_name = group.get('folder_name')
+                if not folder_name: continue
+                
+                for item in group.get('files', []):
+                    original = item.get('original_path')
+                    file_name = item.get('file_name')
+                    if not original or not file_name: continue
+                    
+                    src = os.path.join(directory, original)
+                    dst_dir = os.path.join(directory, folder_name)
+                    dst = os.path.join(dst_dir, file_name)
+                    
+                    if os.path.exists(src) and os.path.isfile(src):
+                        os.makedirs(dst_dir, exist_ok=True)
+                        res = self.bridge.move_file(src, dst, commit=True, batch_id=batch_id)
+                        if res.get('success'): moves += 1
+
+            self.file_list.load_files(directory)
+            summary_text = f"AI applied! Moved {moves} files. Undo available."
+            self.preview_msg.configure(text=summary_text)
