@@ -10,12 +10,12 @@ class Sidebar(ctk.CTkFrame):
     def update_colors(self):
         """Update sidebar colors based on theme"""
         self.configure(
-            fg_color=("#FFFFFF", "#111827"),
+            fg_color=("#F1F5F9", "#080B11"),
             border_width=1,
-            border_color=("#E5E7EB", "#1F2937")
+            border_color=("#E2E8F0", "#111827")
         )
-        self.btn_text_color = ("#4B5563", "#9CA3AF")
-        self.btn_hover_color = ("#F3F4F6", "#1F2937")
+        self.btn_text_color = ("#475569", "#94A3B8")
+        self.btn_hover_color = ("#E2E8F0", "#151F32")
         
         self.create_sidebar()
 
@@ -63,7 +63,7 @@ class Sidebar(ctk.CTkFrame):
         self.bottom_menu.pack(side="bottom", fill="x", pady=(10, 20))
 
         # Top separator for theme footer
-        separator = ctk.CTkFrame(self.bottom_menu, height=1, fg_color=("#E5E7EB", "#1F2937"))
+        separator = ctk.CTkFrame(self.bottom_menu, height=1, fg_color=("#E2E8F0", "#111827"))
         separator.pack(fill="x", padx=16, pady=(0, 12))
 
         # Theme Section Title

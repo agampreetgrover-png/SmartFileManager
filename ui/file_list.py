@@ -90,12 +90,12 @@ class FileList(ctk.CTkFrame):
     def get_colors(self):
         """Get theme-aware colors"""
         return {
-            "panel_bg": ("#F8FAFC", "#0F172A"),
-            "header_border": ("#E2E8F0", "#1E293B"),
-            "card_bg": ("#FFFFFF", "#1E293B"),
-            "card_hover": ("#F9FAFB", "#334155"),
-            "card_border": ("#E2E8F0", "#1E293B"),
-            "card_border_hover": ("#CBD5E1", "#334155"),
+            "panel_bg": ("#F8FAFC", "#0B0F19"),
+            "header_border": ("#E2E8F0", "#1F2937"),
+            "card_bg": ("#FFFFFF", "#111827"),
+            "card_hover": ("#F8FAFC", "#151F32"),
+            "card_border": ("#F1F5F9", "#111827"),
+            "card_border_hover": ("#E2E8F0", "#1F2937"),
             "text_primary": ("#1F2937", "#F9FAFB"),
             "text_secondary": ("#6B7280", "#9CA3AF"),
             "text_hover": ("#1F2937", "#F9FAFB")
@@ -139,7 +139,10 @@ class FileList(ctk.CTkFrame):
             files.append((f"Error reading directory: {e}", "", "", False, False))
 
         colors = self.get_colors()
-        self.scroll.configure(fg_color=colors["card_bg"])
+        self.scroll.configure(
+            fg_color=colors["panel_bg"],
+            border_color=colors["header_border"]
+        )
 
         # Add headers wrapper
         header_wrapper = ctk.CTkFrame(self.scroll, fg_color="transparent")
