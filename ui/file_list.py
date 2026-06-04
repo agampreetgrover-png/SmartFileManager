@@ -16,7 +16,7 @@ class FileList(ctk.CTkFrame):
         super().__init__(master, fg_color="transparent")
 
         self.master = master
-        self.scroll = ctk.CTkScrollableFrame(self, corner_radius=12, border_width=1, border_color=("#E5E7EB", "#374151"))
+        self.scroll = ctk.CTkScrollableFrame(self, corner_radius=16, border_width=1, border_color=("#E5E7EB", "#374151"))
         self.scroll.pack(fill="both", expand=True)
 
         self.current_directory = None
@@ -29,7 +29,7 @@ class FileList(ctk.CTkFrame):
             fg_color=colors["panel_bg"],
             border_width=1,
             border_color=colors["header_border"],
-            corner_radius=12
+            corner_radius=16
         )
 
         # Clear existing widgets
@@ -72,7 +72,7 @@ class FileList(ctk.CTkFrame):
             text="Browse Folder",
             width=160,
             height=36,
-            corner_radius=8,
+            corner_radius=16,
             fg_color=("#6366F1", "#818CF8"),
             hover_color=("#4F46E5", "#6366F1"),
             text_color="#FFFFFF",
@@ -192,7 +192,7 @@ class FileList(ctk.CTkFrame):
 
             card = ctk.CTkFrame(
                 self.scroll, 
-                corner_radius=12, 
+                corner_radius=16, 
                 height=38, 
                 fg_color=colors["card_bg"],
                 border_width=1,

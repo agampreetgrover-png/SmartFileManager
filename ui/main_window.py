@@ -55,6 +55,9 @@ class MainWindow(ctk.CTk):
         self.statusbar = self.create_statusbar_panel()
         self.statusbar.pack(in_=self.main_container, side="bottom", fill="x", padx=16, pady=(0, 16))
 
+        # Apply glass effect
+        self.apply_glass_effect()
+
     def create_topbar(self):
         frame = ctk.CTkFrame(self, height=80, corner_radius=0, fg_color="transparent", border_width=0)
 
@@ -342,6 +345,22 @@ class MainWindow(ctk.CTk):
         current = ctk.get_appearance_mode()
         new_mode = "Light" if current == "Dark" else "Dark"
         ctk.set_appearance_mode(new_mode)
+        # Update DWM dark mode attribute if running glass effect on Windows
+        try:
+            import platform
+            import ctypes
+            if platform.system() == "Windows":
+                hwnd = ctypes.windll.user32.GetParent(self.winfo_id()) or self.winfo_id()
+                DWMWA_USE_IMMERSIVE_DARK_MODE = 20
+                is_dark = ctypes.c_int(1 if new_mode == "Dark" else 0)
+                ctypes.windll.dwmapi.DwmSetWindowAttribute(
+                    hwnd,
+                    DWMWA_USE_IMMERSIVE_DARK_MODE,
+                    ctypes.byref(is_dark),
+                    ctypes.sizeof(is_dark)
+                )
+        except Exception:
+            pass
         # Update all UI components with new colors
         self.after(100, self.refresh_ui_colors)
 
@@ -819,3 +838,60 @@ class MainWindow(ctk.CTk):
             self.file_list.load_files(directory)
             summary_text = f"AI applied! Moved {moves} files. Undo available."
             self.preview_msg.configure(text=summary_text)
+
+    def apply_glass_effect(self):
+        """
+        Applies modern Windows DWM blur / Acrylic backdrop effect to the window.
+        """
+        import platform
+        import ctypes
+        
+        if platform.system() != "Windows":
+            return
+            
+        try:
+            self.update()
+            hwnd = ctypes.windll.user32.GetParent(self.winfo_id())
+            if not hwnd:
+                hwnd = self.winfo_id()
+                
+            class MARGINS(ctypes.Structure):
+                _fields_ = [
+                    ("cxLeftWidth", ctypes.c_int),
+                    ("cxRightWidth", ctypes.c_int),
+                    ("cyTopHeight", ctypes.c_int),
+                    ("cyBottomHeight", ctypes.c_int)
+                ]
+                
+            # Extend DWM glass frame into client area
+            margins = MARGINS(-1, -1, -1, -1)
+            ctypes.windll.dwmapi.DwmExtendFrameIntoClientArea(hwnd, ctypes.byref(margins))
+            
+            # Use transparent color key for Tkinter background
+            self.wm_attributes("-transparentcolor", "#000001")
+            self.configure(fg_color="#000001")
+            
+            # Set immersive dark mode titlebar attribute
+            DWMWA_USE_IMMERSIVE_DARK_MODE = 20
+            is_dark = ctypes.c_int(1 if ctk.get_appearance_mode() == "Dark" else 0)
+            ctypes.windll.dwmapi.DwmSetWindowAttribute(
+                hwnd,
+                DWMWA_USE_IMMERSIVE_DARK_MODE,
+                ctypes.byref(is_dark),
+                ctypes.sizeof(is_dark)
+            )
+            
+            # Try Windows 11 Acrylic blur
+            version = platform.win32_ver()[1]
+            build = int(version.split('.')[-1]) if '.' in version else 0
+            if build >= 22000:
+                DWMWA_SYSTEMBACKDROP_TYPE = 38
+                backdrop_type = ctypes.c_int(3) # Acrylic blur backdrop
+                ctypes.windll.dwmapi.DwmSetWindowAttribute(
+                    hwnd,
+                    DWMWA_SYSTEMBACKDROP_TYPE,
+                    ctypes.byref(backdrop_type),
+                    ctypes.sizeof(backdrop_type)
+                )
+        except Exception as e:
+            print(f"Failed to apply glass effect: {e}")

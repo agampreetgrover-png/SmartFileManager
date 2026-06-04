@@ -48,7 +48,7 @@ class Sidebar(ctk.CTkFrame):
                 text=f"{icon}   {item}",
                 anchor="w",
                 height=40,
-                corner_radius=12,
+                corner_radius=16,
                 fg_color="transparent",
                 text_color=self.btn_text_color,
                 hover_color=self.btn_hover_color,
