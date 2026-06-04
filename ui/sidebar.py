@@ -55,7 +55,7 @@ class Sidebar(ctk.CTkFrame):
                 hover_color=self.btn_hover_color,
                 font=("Inter", 13)
             )
-            btn.pack(fill="x", padx=15, pady=3)
+            btn.pack(fill="x", padx=15, pady=10, expand=True)
             btn.configure(command=lambda b=btn, t=item: self.set_active(b, t))
             self.buttons.append(btn)
 
