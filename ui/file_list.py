@@ -170,10 +170,10 @@ class FileList(ctk.CTkFrame):
 
         header_frame = ctk.CTkFrame(header_wrapper, fg_color="transparent", height=20)
         header_frame.pack(fill="x")
-        header_frame.grid_columnconfigure(0, weight=3)
-        header_frame.grid_columnconfigure(1, weight=1)
-        header_frame.grid_columnconfigure(2, weight=1)
-        header_frame.grid_columnconfigure(3, weight=1)
+        header_frame.grid_columnconfigure(0, weight=3, uniform="col")
+        header_frame.grid_columnconfigure(1, weight=1, uniform="col")
+        header_frame.grid_columnconfigure(2, weight=1, uniform="col")
+        header_frame.grid_columnconfigure(3, weight=1, uniform="col")
 
         ctk.CTkLabel(header_frame, text="Name", font=("Inter", 11, "bold"), text_color=("#6366F1", "#818CF8")).grid(row=0, column=0, sticky="w", padx=10)
         ctk.CTkLabel(header_frame, text="Size", font=("Inter", 11, "bold"), text_color=("#6366F1", "#818CF8")).grid(row=0, column=1, sticky="w")
@@ -223,10 +223,10 @@ class FileList(ctk.CTkFrame):
             )
             card.pack(fill="x", padx=6, pady=2)
 
-            card.grid_columnconfigure(0, weight=3)
-            card.grid_columnconfigure(1, weight=1)
-            card.grid_columnconfigure(2, weight=1)
-            card.grid_columnconfigure(3, weight=1)
+            card.grid_columnconfigure(0, weight=3, uniform="col")
+            card.grid_columnconfigure(1, weight=1, uniform="col")
+            card.grid_columnconfigure(2, weight=1, uniform="col")
+            card.grid_columnconfigure(3, weight=1, uniform="col")
 
             name_label = ctk.CTkLabel(
                 card, 

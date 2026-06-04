@@ -568,16 +568,19 @@ class MainWindow(ctk.CTk):
 
     def on_folder_changed(self):
         # Called by FileList when the current folder changes
-        if getattr(self.file_list, 'current_directory', None):
+        directory = getattr(self.file_list, 'current_directory', None)
+        if directory:
             try:
                 self.type_sorter_btn.configure(state="normal")
                 self.ai_button.configure(state="normal")
+                self.preview_msg.configure(text=f"Folder open: {os.path.basename(directory) or directory}")
             except Exception:
                 pass
         else:
             try:
                 self.type_sorter_btn.configure(state="disabled")
                 self.ai_button.configure(state="disabled")
+                self.preview_msg.configure(text="No folder open.")
             except Exception:
                 pass
 
