@@ -3,9 +3,9 @@ import requests
 from typing import List
 from pydantic import ValidationError
 from core.models import FileObject, OrganizationPlan
+from core import ollama_manager
 
 OLLAMA_URL = "http://localhost:11434/api/generate"
-MODEL_NAME = "phi4-mini"
 
 # Pydantic will auto-generate the JSON schema we need the LLM to follow
 PLAN_SCHEMA = OrganizationPlan.model_json_schema()
@@ -61,8 +61,9 @@ def ai_organize_batch(files: List[FileObject], retries: int = 3) -> Organization
         files_data=files_data
     )
     
+    model_name = ollama_manager.get_active_model()
     payload = {
-        "model": MODEL_NAME,
+        "model": model_name,
         "prompt": prompt,
         "stream": False,
         "format": "json"  # Forces Ollama to output JSON

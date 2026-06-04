@@ -5,6 +5,7 @@ import threading
 import time
 import os
 from app_bridge import App
+from core import ollama_manager
 
 ctk.set_appearance_mode("light")  # Start with light mode
 ctk.set_default_color_theme("blue")
@@ -20,6 +21,10 @@ class MainWindow(ctk.CTk):
         
         # Animation states
         self.ai_pulse_state = False
+
+        # Ollama status tracking
+        self._ollama_status = "offline"  # "offline" | "pulling" | "ready"
+        self._pull_fraction = 0.0
 
         self.grid_columnconfigure(1, weight=3)
         self.grid_columnconfigure(2, weight=1)
@@ -81,6 +86,34 @@ class MainWindow(ctk.CTk):
         )
         self.theme_btn.pack(side="right", padx=10)
 
+        # ── Ollama status chip ──────────────────────────────────────────
+        self.ollama_chip = ctk.CTkFrame(
+            right,
+            height=30,
+            corner_radius=15,
+            fg_color=("#FEE2E2", "#450A0A"),   # starts red (offline)
+            border_width=1,
+            border_color=("#FCA5A5", "#7F1D1D"),
+        )
+        self.ollama_chip.pack(side="right", padx=10)
+
+        self.ollama_dot = ctk.CTkLabel(
+            self.ollama_chip,
+            text="●",
+            font=("Inter", 11),
+            text_color=("#EF4444", "#F87171"),
+        )
+        self.ollama_dot.pack(side="left", padx=(10, 2), pady=4)
+
+        self.ollama_chip_label = ctk.CTkLabel(
+            self.ollama_chip,
+            text="Ollama Offline",
+            font=("Inter", 11, "bold"),
+            text_color=("#B91C1C", "#FCA5A5"),
+        )
+        self.ollama_chip_label.pack(side="left", padx=(0, 10), pady=4)
+        # ───────────────────────────────────────────────────────────────
+
         search = ctk.CTkEntry(right, width=220, height=36, corner_radius=18, placeholder_text="Search files...", fg_color=("#FFFFFF", "#1F2937"), border_color=("#E5E7EB", "#374151"), border_width=1, text_color=("#1F2937", "#F9FAFB"), font=("Inter", 12))
         search.pack(side="right", padx=15)
         search.bind("<FocusIn>", lambda e: search.configure(border_color=("#6366F1", "#818CF8")))
@@ -107,24 +140,92 @@ class MainWindow(ctk.CTk):
     def create_preview_panel(self):
         frame_bg = ("#FFFFFF", "#1F2937")
         text_color = ("#1F2937", "#F9FAFB")
-        indicator_color = ("#6366F1", "#818CF8")
-        
+
         frame = ctk.CTkFrame(self, fg_color=frame_bg, border_width=1, border_color=("#E5E7EB", "#374151"), corner_radius=12)
 
+        # ── Header ────────────────────────────────────────────────────────
         header = ctk.CTkFrame(frame, fg_color="transparent", height=40)
-        header.pack(fill="x", padx=20, pady=(20, 10))
-        
+        header.pack(fill="x", padx=20, pady=(20, 6))
+
         preview_label = ctk.CTkLabel(header, text="Selection", font=("Inter", 12, "bold"), text_color=text_color)
         preview_label.pack(side="left")
 
-        # Compact selection controls (very small)
-        self.preview_box = ctk.CTkFrame(frame, fg_color="transparent")
-        self.preview_box.pack(fill="both", expand=True, padx=12, pady=8)
+        # ── Model Selector ────────────────────────────────────────────────
+        model_section = ctk.CTkFrame(frame, fg_color="transparent")
+        model_section.pack(fill="x", padx=12, pady=(0, 6))
 
-        self.preview_msg = ctk.CTkLabel(self.preview_box, text="No file selected.", font=("Inter", 10), text_color=("#6B7280", "#9CA3AF"), justify="left")
+        ctk.CTkLabel(
+            model_section,
+            text="🤖  Model",
+            font=("Inter", 10, "bold"),
+            text_color=("#6B7280", "#9CA3AF"),
+        ).pack(side="left", padx=(0, 6))
+
+        self._model_var = ctk.StringVar(value=ollama_manager.get_active_model())
+        self.model_selector = ctk.CTkOptionMenu(
+            model_section,
+            variable=self._model_var,
+            values=[ollama_manager.get_active_model()],
+            width=160,
+            height=26,
+            corner_radius=8,
+            fg_color=("#F3F4F6", "#111827"),
+            button_color=("#E5E7EB", "#374151"),
+            button_hover_color=("#D1D5DB", "#4B5563"),
+            text_color=("#1F2937", "#F9FAFB"),
+            font=("Inter", 10),
+            dropdown_font=("Inter", 10),
+            command=self._on_model_changed,
+        )
+        self.model_selector.pack(side="left")
+
+        self.refresh_model_btn = ctk.CTkButton(
+            model_section,
+            text="↻",
+            width=26,
+            height=26,
+            corner_radius=8,
+            fg_color="transparent",
+            border_width=1,
+            border_color=("#E5E7EB", "#374151"),
+            hover_color=("#E5E7EB", "#374151"),
+            text_color=("#6B7280", "#9CA3AF"),
+            font=("Inter", 14),
+            command=self._refresh_model_list,
+        )
+        self.refresh_model_btn.pack(side="left", padx=(6, 0))
+
+        # ── Ollama pull progress bar (hidden until pulling) ────────────────
+        self.pull_bar = ctk.CTkProgressBar(
+            frame, height=4, corner_radius=2,
+            progress_color=("#F59E0B", "#D97706"),
+            fg_color=("#FEF3C7", "#292524"),
+        )
+        self.pull_bar.set(0)
+        # Not packed yet — shown only while pulling
+
+        self.pull_label = ctk.CTkLabel(
+            frame,
+            text="",
+            font=("Inter", 9),
+            text_color=("#92400E", "#FCD34D"),
+        )
+        # Not packed yet
+
+        # ── Selection box ─────────────────────────────────────────────────
+        self.preview_box = ctk.CTkFrame(frame, fg_color="transparent")
+        self.preview_box.pack(fill="both", expand=True, padx=12, pady=(2, 8))
+
+        self.preview_msg = ctk.CTkLabel(
+            self.preview_box, text="No file selected.",
+            font=("Inter", 10), text_color=("#6B7280", "#9CA3AF"), justify="left"
+        )
         self.preview_msg.pack(anchor="w", pady=(0, 6))
 
-        self.progress_bar = ctk.CTkProgressBar(self.preview_box, width=200, height=6, corner_radius=3, progress_color=("#6366F1", "#818CF8"))
+        self.progress_bar = ctk.CTkProgressBar(
+            self.preview_box, width=200, height=6, corner_radius=3,
+            progress_color=("#6366F1", "#818CF8")
+        )
         self.progress_bar.set(0)
 
         controls = ctk.CTkFrame(self.preview_box, fg_color="transparent")
@@ -175,6 +276,34 @@ class MainWindow(ctk.CTk):
         self.undo_btn.pack(side="left", padx=(8, 0))
 
         return frame
+
+    # ── Model selector helpers ─────────────────────────────────────────────
+
+    def _on_model_changed(self, model_name: str):
+        """Called when user picks a different model."""
+        ollama_manager.set_active_model(model_name)
+        self._model_var.set(model_name)
+        self.preview_msg.configure(text=f"Model set to {model_name}")
+
+    def _refresh_model_list(self):
+        """Query Ollama for locally available models and update the dropdown."""
+        def _fetch():
+            models = ollama_manager.get_available_models()
+            self.after(0, lambda: self._apply_model_list(models))
+
+        threading.Thread(target=_fetch, daemon=True).start()
+
+    def _apply_model_list(self, models):
+        """Update model dropdown with fresh model list (must run on main thread)."""
+        if not models:
+            return
+        current = ollama_manager.get_active_model()
+        self.model_selector.configure(values=models)
+        if current in models:
+            self._model_var.set(current)
+        else:
+            self._model_var.set(models[0])
+            ollama_manager.set_active_model(models[0])
 
     def open_folder_dialog(self):
         """Open a dialog to select a folder from the PC and load its files."""
@@ -286,6 +415,159 @@ class MainWindow(ctk.CTk):
         else:
             self.file_list.load_files(directory=self.file_list.current_directory)
         self.sidebar.update_colors()
+
+    # ── Ollama status chip callbacks ───────────────────────────────────────
+
+    def _set_ollama_chip(self, status: str, label: str):
+        """
+        Update the topbar Ollama chip.
+        status: "offline" | "pulling" | "ready"
+        Must be called on the main thread.
+        """
+        self._ollama_status = status
+        colors = {
+            "offline": {
+                "chip_fg":   ("#FEE2E2", "#450A0A"),
+                "chip_bd":   ("#FCA5A5", "#7F1D1D"),
+                "dot_color": ("#EF4444", "#F87171"),
+                "txt_color": ("#B91C1C", "#FCA5A5"),
+            },
+            "pulling": {
+                "chip_fg":   ("#FEF3C7", "#2D1F00"),
+                "chip_bd":   ("#FCD34D", "#78350F"),
+                "dot_color": ("#F59E0B", "#FCD34D"),
+                "txt_color": ("#92400E", "#FCD34D"),
+            },
+            "ready": {
+                "chip_fg":   ("#D1FAE5", "#052E16"),
+                "chip_bd":   ("#6EE7B7", "#064E3B"),
+                "dot_color": ("#10B981", "#34D399"),
+                "txt_color": ("#065F46", "#6EE7B7"),
+            },
+        }
+        c = colors.get(status, colors["offline"])
+        try:
+            self.ollama_chip.configure(fg_color=c["chip_fg"], border_color=c["chip_bd"])
+            self.ollama_dot.configure(text_color=c["dot_color"])
+            self.ollama_chip_label.configure(text=label, text_color=c["txt_color"])
+        except Exception:
+            pass
+
+    # ── Formatting helpers ─────────────────────────────────────────────────
+
+    @staticmethod
+    def _fmt_bytes(n: int) -> str:
+        """Format a byte count as a human-readable string."""
+        if n <= 0:
+            return "0 B"
+        for unit in ("B", "KB", "MB", "GB"):
+            if n < 1024:
+                return f"{n:.1f} {unit}"
+            n /= 1024
+        return f"{n:.1f} TB"
+
+    @staticmethod
+    def _fmt_speed(bps: float) -> str:
+        """Format bytes/sec as MB/s or KB/s."""
+        if bps <= 0:
+            return ""
+        if bps >= 1_048_576:
+            return f"{bps/1_048_576:.1f} MB/s"
+        if bps >= 1024:
+            return f"{bps/1024:.1f} KB/s"
+        return f"{bps:.0f} B/s"
+
+    @staticmethod
+    def _fmt_eta(seconds: float) -> str:
+        """Format ETA seconds as a compact human string."""
+        if seconds < 0:
+            return ""
+        s = int(seconds)
+        if s < 60:
+            return f"{s}s"
+        m, s = divmod(s, 60)
+        if m < 60:
+            return f"{m}m {s:02d}s"
+        h, m = divmod(m, 60)
+        return f"{h}h {m:02d}m"
+
+    def on_ollama_pull_progress(self, stats: dict):
+        """
+        Called from background thread on each pull progress event.
+        stats keys: status, fraction, completed_bytes, total_bytes,
+                    speed_bps, eta_seconds
+        """
+        def _update():
+            fraction       = stats.get("fraction", -1.0)
+            completed      = stats.get("completed_bytes", 0)
+            total          = stats.get("total_bytes", 0)
+            speed          = stats.get("speed_bps", 0.0)
+            eta            = stats.get("eta_seconds", -1.0)
+            status_str     = stats.get("status", "")
+
+            pct = int(fraction * 100) if fraction >= 0 else 0
+
+            # ── Topbar chip: compact single-line
+            speed_str = self._fmt_speed(speed)
+            eta_str   = self._fmt_eta(eta)
+
+            if total > 0:
+                chip_parts = [f"📥 {pct}%"]
+                if speed_str:
+                    chip_parts.append(speed_str)
+                if eta_str:
+                    chip_parts.append(f"~{eta_str}")
+                chip_text = "  ·  ".join(chip_parts)
+            else:
+                # status message with no bytes (manifest, verifying, etc.)
+                short = status_str[:28] + "…" if len(status_str) > 28 else status_str
+                chip_text = f"⬇ {short}" if short else "Pulling model…"
+
+            self._set_ollama_chip("pulling", chip_text)
+
+            # ── Preview panel: progress bar + detail line
+            try:
+                self.pull_bar.pack(fill="x", padx=12, pady=(0, 0))
+                self.pull_label.pack(anchor="w", padx=12, pady=(0, 4))
+
+                if total > 0:
+                    done_str  = self._fmt_bytes(completed)
+                    total_str = self._fmt_bytes(total)
+                    detail    = f"{done_str} / {total_str}"
+                    if speed_str:
+                        detail += f"   •   {speed_str}"
+                    if eta_str:
+                        detail += f"   •   ~{eta_str} left"
+                    self.pull_label.configure(text=detail)
+                    self.pull_bar.set(max(0.0, min(1.0, fraction)))
+                else:
+                    self.pull_label.configure(text=status_str[:70])
+                    self.pull_bar.set(0)
+
+            except Exception:
+                pass
+
+        self.after(0, _update)
+
+    def on_ollama_ready(self, success: bool):
+        """
+        Called from background thread when ensure_model_ready() finishes.
+        Schedules UI update on main thread.
+        """
+        def _update():
+            if success:
+                self._set_ollama_chip("ready", "Ollama Ready")
+                # Refresh model list in selector
+                self._refresh_model_list()
+            else:
+                self._set_ollama_chip("offline", "Ollama Offline")
+            # Hide pull progress
+            try:
+                self.pull_bar.pack_forget()
+                self.pull_label.pack_forget()
+            except Exception:
+                pass
+        self.after(0, _update)
 
     def on_folder_changed(self):
         # Called by FileList when the current folder changes
