@@ -41,19 +41,19 @@ class MainWindow(ctk.CTk):
         self.bridge = App
 
         self.topbar = self.create_topbar()
-        self.topbar.pack(in_=self.main_container, side="top", fill="x", pady=(20, 10), padx=24)
+        self.topbar.pack(in_=self.main_container, side="top", fill="x", pady=(16, 8), padx=16)
 
         self.breadcrumb_frame = ctk.CTkFrame(self, fg_color="transparent")
-        self.breadcrumb_frame.pack(in_=self.main_container, side="top", fill="x", padx=24, pady=(0, 10))
+        self.breadcrumb_frame.pack(in_=self.main_container, side="top", fill="x", padx=16, pady=(0, 8))
         self.path_label = ctk.CTkLabel(self.breadcrumb_frame, text=".", font=("Inter", 12, "bold"), text_color=("#6B7280", "#9CA3AF"))
         self.path_label.pack(anchor="w")
 
         self.file_list = FileList(self)
-        self.file_list.pack(in_=self.main_container, side="top", fill="both", expand=True, padx=24, pady=(0, 10))
+        self.file_list.pack(in_=self.main_container, side="top", fill="both", expand=True, padx=16, pady=(0, 8))
 
         # Create statusbar at the bottom
         self.statusbar = self.create_statusbar_panel()
-        self.statusbar.pack(in_=self.main_container, side="bottom", fill="x", padx=24, pady=(0, 20))
+        self.statusbar.pack(in_=self.main_container, side="bottom", fill="x", padx=16, pady=(0, 16))
 
     def create_topbar(self):
         frame = ctk.CTkFrame(self, height=80, corner_radius=0, fg_color="transparent", border_width=0)
@@ -64,12 +64,12 @@ class MainWindow(ctk.CTk):
         title_frame = ctk.CTkFrame(left, fg_color="transparent")
         title_frame.pack(anchor="w")
 
-        title_1 = ctk.CTkLabel(title_frame, text="Smart ", font=("Inter", 22, "bold"), text_color=("#1F2937", "#F9FAFB"))
+        title_1 = ctk.CTkLabel(title_frame, text="Smart ", font=("Inter", 32, "bold"), text_color=("#1F2937", "#F9FAFB"))
         title_1.pack(side="left")
-        title_2 = ctk.CTkLabel(title_frame, text="File Manager", font=("Inter", 22, "bold"), text_color=("#6366F1", "#818CF8"))
+        title_2 = ctk.CTkLabel(title_frame, text="File Manager", font=("Inter", 32, "bold"), text_color=("#6366F1", "#818CF8"))
         title_2.pack(side="left")
 
-        subtitle = ctk.CTkLabel(left, text="Manage your files smarter with AI", font=("Inter", 13), text_color=("#6B7280", "#9CA3AF"))
+        subtitle = ctk.CTkLabel(left, text="Manage your files smarter with AI", font=("Inter", 14), text_color=("#6B7280", "#9CA3AF"))
         subtitle.pack(anchor="w", pady=(2, 0))
 
         right = ctk.CTkFrame(frame, fg_color="transparent")
