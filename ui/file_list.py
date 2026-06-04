@@ -25,51 +25,85 @@ class FileList(ctk.CTkFrame):
     def show_welcome(self):
         """Show welcome message when no directory is selected"""
         colors = self.get_colors()
-        self.scroll.configure(fg_color=colors["panel_bg"])
+        self.scroll.configure(fg_color=colors["card_bg"])
 
         # Clear existing
         for widget in self.scroll.winfo_children():
             widget.destroy()
 
-        # Welcome content
+        # Welcome content wrapper frame to center items
         welcome_frame = ctk.CTkFrame(self.scroll, fg_color="transparent")
-        welcome_frame.pack(expand=True, fill="both", padx=40, pady=40)
+        welcome_frame.pack(expand=True, fill="both", padx=40, pady=60)
 
         welcome_label = ctk.CTkLabel(
             welcome_frame,
             text="Welcome to Smart File Manager",
-            font=("Inter", 24, "bold"),
+            font=("Inter", 26, "bold"),
             text_color=colors["text_primary"]
         )
-        welcome_label.pack(pady=(0, 20))
+        welcome_label.pack(pady=(0, 10))
 
         subtitle = ctk.CTkLabel(
             welcome_frame,
-            text="Click 'Browse' to select a folder and start managing your files.",
+            text="Organize your files smarter with AI classification and tools.",
             font=("Inter", 14),
             text_color=colors["text_secondary"]
         )
         subtitle.pack(pady=(0, 30))
 
-        # Optional: Add some tips or features
-        tips_frame = ctk.CTkFrame(welcome_frame, fg_color=colors["card_bg"], corner_radius=8, border_width=1, border_color=colors["card_border"])
-        tips_frame.pack(fill="x", pady=(0, 20))
+        # Centered Primary CTA Button
+        self.cta_btn = ctk.CTkButton(
+            welcome_frame,
+            text="📁   Browse Folder",
+            width=200,
+            height=44,
+            corner_radius=10,
+            fg_color=("#6366F1", "#818CF8"),
+            hover_color=("#4F46E5", "#6366F1"),
+            text_color="#FFFFFF",
+            font=("Inter", 14, "bold"),
+            command=self.master.open_folder_dialog
+        )
+        self.cta_btn.pack(pady=(0, 50))
 
-        tips_title = ctk.CTkLabel(tips_frame, text="✨ Features", font=("Inter", 16, "bold"), text_color=colors["text_primary"])
-        tips_title.pack(pady=(15, 10), padx=20)
+        # Horizontal Feature Cards Layout
+        cards_frame = ctk.CTkFrame(welcome_frame, fg_color="transparent")
+        cards_frame.pack(fill="x", padx=10)
 
-        tips = [
-            "• Organize files with AI-powered classification",
-            "• Clean, modern interface with dark/light modes",
-            "• Fast search and file browsing",
-            "• Smart file management tools"
+        features = [
+            ("🤖", "AI Organizer", "Automatically classify and group your files using local Ollama LLMs."),
+            ("⚡", "Rule Sorter", "Instantly categorize files by extension type and deterministic heuristics."),
+            ("🛡️", "Safe Undo", "Full transaction logging allows you to preview and safely revert operations.")
         ]
 
-        for tip in tips:
-            tip_label = ctk.CTkLabel(tips_frame, text=tip, font=("Inter", 12), text_color=colors["text_secondary"], anchor="w")
-            tip_label.pack(fill="x", padx=20, pady=2)
+        for icon, title, desc in features:
+            card = ctk.CTkFrame(
+                cards_frame,
+                fg_color=colors["panel_bg"], # lighter/darker contrast bg
+                border_width=1,
+                border_color=colors["card_border_hover"],
+                corner_radius=10,
+                height=150
+            )
+            card.pack(side="left", expand=True, fill="both", padx=10)
+            card.pack_propagate(False)
 
-        tips_title.pack(pady=(10, 15))  # Close padding
+            card_icon = ctk.CTkLabel(card, text=icon, font=("Inter", 24))
+            card_icon.pack(pady=(15, 5))
+
+            card_title = ctk.CTkLabel(card, text=title, font=("Inter", 14, "bold"), text_color=colors["text_primary"])
+            card_title.pack(pady=2)
+
+            card_desc = ctk.CTkLabel(
+                card,
+                text=desc,
+                font=("Inter", 11),
+                text_color=colors["text_secondary"],
+                wraplength=220,
+                justify="center"
+            )
+            card_desc.pack(pady=(5, 10))
+
         # Notify parent that there is no active folder
         try:
             self.master.on_folder_changed()
@@ -128,7 +162,7 @@ class FileList(ctk.CTkFrame):
             files.append((f"Error reading directory: {e}", "", "", False, False))
 
         colors = self.get_colors()
-        self.scroll.configure(fg_color=colors["panel_bg"])
+        self.scroll.configure(fg_color=colors["card_bg"])
 
         # Add headers wrapper
         header_wrapper = ctk.CTkFrame(self.scroll, fg_color="transparent")

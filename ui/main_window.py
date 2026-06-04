@@ -26,30 +26,40 @@ class MainWindow(ctk.CTk):
         self._ollama_status = "offline"  # "offline" | "pulling" | "ready"
         self._pull_fraction = 0.0
 
-        self.grid_columnconfigure(1, weight=3)
-        self.grid_columnconfigure(2, weight=1)
-        self.grid_rowconfigure(1, weight=1)
+        self.grid_columnconfigure(0, weight=0)
+        self.grid_columnconfigure(1, weight=1)
+        self.grid_rowconfigure(0, weight=1)
 
         self.sidebar = Sidebar(self)
-        self.sidebar.grid(row=0, column=0, rowspan=2, sticky="ns", pady=0)
+        self.sidebar.grid(row=0, column=0, sticky="ns", pady=0)
         
-        self.topbar = self.create_topbar()
-        self.topbar.grid(row=0, column=1, columnspan=2, sticky="ew")
-
-        self.file_list = FileList(self)
-        self.file_list.grid(row=1, column=1, sticky="nsew", padx=(10, 20), pady=(0, 20))
+        # Main container that will hold Topbar, Path Breadcrumbs, FileList, and Statusbar
+        self.main_container = ctk.CTkFrame(self, fg_color="transparent", corner_radius=0)
+        self.main_container.grid(row=0, column=1, sticky="nsew")
 
         # Bridge to backend
         self.bridge = App
 
-        self.preview = self.create_preview_panel()
-        self.preview.grid(row=1, column=2, sticky="nsew", padx=(0, 20), pady=(0, 20))
+        self.topbar = self.create_topbar()
+        self.topbar.pack(in_=self.main_container, side="top", fill="x", pady=(20, 10), padx=24)
+
+        self.breadcrumb_frame = ctk.CTkFrame(self, fg_color="transparent")
+        self.breadcrumb_frame.pack(in_=self.main_container, side="top", fill="x", padx=24, pady=(0, 10))
+        self.path_label = ctk.CTkLabel(self.breadcrumb_frame, text=".", font=("Inter", 12, "bold"), text_color=("#6B7280", "#9CA3AF"))
+        self.path_label.pack(anchor="w")
+
+        self.file_list = FileList(self)
+        self.file_list.pack(in_=self.main_container, side="top", fill="both", expand=True, padx=24, pady=(0, 10))
+
+        # Create statusbar at the bottom
+        self.statusbar = self.create_statusbar_panel()
+        self.statusbar.pack(in_=self.main_container, side="bottom", fill="x", padx=24, pady=(0, 20))
 
     def create_topbar(self):
-        frame = ctk.CTkFrame(self, height=100, corner_radius=0, fg_color="transparent", border_width=0)
+        frame = ctk.CTkFrame(self, height=80, corner_radius=0, fg_color="transparent", border_width=0)
 
         left = ctk.CTkFrame(frame, fg_color="transparent")
-        left.pack(side="left", padx=30, pady=20)
+        left.pack(side="left", anchor="center")
 
         title_frame = ctk.CTkFrame(left, fg_color="transparent")
         title_frame.pack(anchor="w")
@@ -62,40 +72,19 @@ class MainWindow(ctk.CTk):
         subtitle = ctk.CTkLabel(left, text="Manage your files smarter with AI", font=("Inter", 13), text_color=("#6B7280", "#9CA3AF"))
         subtitle.pack(anchor="w", pady=(2, 0))
 
-        self.breadcrumb_frame = ctk.CTkFrame(left, fg_color="transparent")
-        self.breadcrumb_frame.pack(anchor="w", pady=(6, 0))
-        self.path_label = ctk.CTkLabel(self.breadcrumb_frame, text=".", font=("Inter", 12, "bold"), text_color=("#6B7280", "#9CA3AF"))
-        self.path_label.pack(anchor="w")
-
         right = ctk.CTkFrame(frame, fg_color="transparent")
-        right.pack(side="right", padx=10, pady=20)
-
-        self.theme_btn = ctk.CTkButton(
-            right,
-            text=self.get_theme_icon(),
-            width=28,
-            height=28,
-            corner_radius=14,
-            fg_color="transparent",
-            border_width=1,
-            border_color=("#E5E7EB", "#374151"),
-            hover_color=("#E5E7EB", "#374151"),
-            text_color=("#111827", "#F9FAFB"),
-            font=("Inter", 16),
-            command=self.toggle_theme
-        )
-        self.theme_btn.pack(side="right", padx=10)
+        right.pack(side="right", anchor="center")
 
         # ── Ollama status chip ──────────────────────────────────────────
         self.ollama_chip = ctk.CTkFrame(
             right,
-            height=30,
-            corner_radius=15,
+            height=32,
+            corner_radius=16,
             fg_color=("#FEE2E2", "#450A0A"),   # starts red (offline)
             border_width=1,
             border_color=("#FCA5A5", "#7F1D1D"),
         )
-        self.ollama_chip.pack(side="right", padx=10)
+        self.ollama_chip.pack(side="right", padx=(8, 0))
 
         self.ollama_dot = ctk.CTkLabel(
             self.ollama_chip,
@@ -114,17 +103,61 @@ class MainWindow(ctk.CTk):
         self.ollama_chip_label.pack(side="left", padx=(0, 10), pady=4)
         # ───────────────────────────────────────────────────────────────
 
-        search = ctk.CTkEntry(right, width=220, height=36, corner_radius=18, placeholder_text="Search files...", fg_color=("#FFFFFF", "#1F2937"), border_color=("#E5E7EB", "#374151"), border_width=1, text_color=("#1F2937", "#F9FAFB"), font=("Inter", 12))
-        search.pack(side="right", padx=15)
-        search.bind("<FocusIn>", lambda e: search.configure(border_color=("#6366F1", "#818CF8")))
-        search.bind("<FocusOut>", lambda e: search.configure(border_color=("#E5E7EB", "#374151")))
+        # AI Tools grouped section
+        self.ai_tools_frame = ctk.CTkFrame(right, fg_color="transparent")
+        self.ai_tools_frame.pack(side="right", padx=8)
 
+        self.undo_btn = ctk.CTkButton(
+            self.ai_tools_frame,
+            text="Undo Scan",
+            width=85,
+            height=32,
+            corner_radius=8,
+            fg_color=("#EF4444", "#DC2626"),
+            hover_color=("#DC2626", "#B91C1C"),
+            text_color="#FFFFFF",
+            font=("Inter", 11, "bold"),
+            command=self.run_undo_scan,
+        )
+        self.undo_btn.pack(side="right", padx=(4, 0))
+
+        self.ai_button = ctk.CTkButton(
+            self.ai_tools_frame,
+            text="AI Scan",
+            width=80,
+            height=32,
+            corner_radius=8,
+            fg_color=("#6366F1", "#818CF8"),
+            hover_color=("#818CF8", "#4F46E5"),
+            text_color="#FFFFFF",
+            font=("Inter", 11, "bold"),
+            command=self.run_ai_scan,
+            state="disabled"
+        )
+        self.ai_button.pack(side="right", padx=4)
+
+        self.type_sorter_btn = ctk.CTkButton(
+            self.ai_tools_frame,
+            text="Type Sorter",
+            width=95,
+            height=32,
+            corner_radius=8,
+            fg_color=("#E5E7EB", "#111827"),
+            hover_color=("#F3F4F6", "#374151"),
+            text_color=("#1F2937", "#F9FAFB"),
+            font=("Inter", 11, "bold"),
+            command=self.run_type_sorter,
+            state="disabled"
+        )
+        self.type_sorter_btn.pack(side="right", padx=(0, 4))
+
+        # Browse Button
         self.browse_btn = ctk.CTkButton(
             right,
             text="📁 Browse",
             width=88,
-            height=34,
-            corner_radius=10,
+            height=32,
+            corner_radius=8,
             fg_color=("#FFFFFF", "#1F2937"),
             border_color=("#6366F1", "#818CF8"),
             border_width=1,
@@ -135,46 +168,47 @@ class MainWindow(ctk.CTk):
         )
         self.browse_btn.pack(side="right", padx=8)
 
-        return frame
-    
-    def create_preview_panel(self):
-        frame_bg = ("#FFFFFF", "#1F2937")
-        text_color = ("#1F2937", "#F9FAFB")
+        # Search Bar
+        search = ctk.CTkEntry(
+            right,
+            width=180,
+            height=32,
+            corner_radius=16,
+            placeholder_text="Search files...",
+            fg_color=("#FFFFFF", "#1F2937"),
+            border_color=("#E5E7EB", "#374151"),
+            border_width=1,
+            text_color=("#1F2937", "#F9FAFB"),
+            font=("Inter", 12)
+        )
+        search.pack(side="right", padx=8)
+        search.bind("<FocusIn>", lambda e: search.configure(border_color=("#6366F1", "#818CF8")))
+        search.bind("<FocusOut>", lambda e: search.configure(border_color=("#E5E7EB", "#374151")))
 
-        frame = ctk.CTkFrame(self, fg_color=frame_bg, border_width=1, border_color=("#E5E7EB", "#374151"), corner_radius=12)
-
-        # ── Header ────────────────────────────────────────────────────────
-        header = ctk.CTkFrame(frame, fg_color="transparent", height=40)
-        header.pack(fill="x", padx=20, pady=(20, 6))
-
-        preview_label = ctk.CTkLabel(header, text="Selection", font=("Inter", 12, "bold"), text_color=text_color)
-        preview_label.pack(side="left")
-
-        # ── Model Selector ────────────────────────────────────────────────
-        model_section = ctk.CTkFrame(frame, fg_color="transparent")
-        model_section.pack(fill="x", padx=12, pady=(0, 6))
+        # Model Selector section
+        model_section = ctk.CTkFrame(right, fg_color="transparent")
+        model_section.pack(side="right", padx=8)
 
         ctk.CTkLabel(
             model_section,
-            text="🤖  Model",
-            font=("Inter", 10, "bold"),
-            text_color=("#6B7280", "#9CA3AF"),
-        ).pack(side="left", padx=(0, 6))
+            text="🤖",
+            font=("Inter", 12),
+        ).pack(side="left", padx=(0, 4))
 
         self._model_var = ctk.StringVar(value=ollama_manager.get_active_model())
         self.model_selector = ctk.CTkOptionMenu(
             model_section,
             variable=self._model_var,
             values=[ollama_manager.get_active_model()],
-            width=160,
-            height=26,
+            width=140,
+            height=32,
             corner_radius=8,
             fg_color=("#F3F4F6", "#111827"),
             button_color=("#E5E7EB", "#374151"),
             button_hover_color=("#D1D5DB", "#4B5563"),
             text_color=("#1F2937", "#F9FAFB"),
-            font=("Inter", 10),
-            dropdown_font=("Inter", 10),
+            font=("Inter", 11),
+            dropdown_font=("Inter", 11),
             command=self._on_model_changed,
         )
         self.model_selector.pack(side="left")
@@ -182,8 +216,8 @@ class MainWindow(ctk.CTk):
         self.refresh_model_btn = ctk.CTkButton(
             model_section,
             text="↻",
-            width=26,
-            height=26,
+            width=28,
+            height=32,
             corner_radius=8,
             fg_color="transparent",
             border_width=1,
@@ -193,87 +227,51 @@ class MainWindow(ctk.CTk):
             font=("Inter", 14),
             command=self._refresh_model_list,
         )
-        self.refresh_model_btn.pack(side="left", padx=(6, 0))
+        self.refresh_model_btn.pack(side="left", padx=(4, 0))
 
-        # ── Ollama pull progress bar (hidden until pulling) ────────────────
-        self.pull_bar = ctk.CTkProgressBar(
-            frame, height=4, corner_radius=2,
-            progress_color=("#F59E0B", "#D97706"),
-            fg_color=("#FEF3C7", "#292524"),
-        )
-        self.pull_bar.set(0)
-        # Not packed yet — shown only while pulling
-
-        self.pull_label = ctk.CTkLabel(
-            frame,
-            text="",
-            font=("Inter", 9),
-            text_color=("#92400E", "#FCD34D"),
-        )
-        # Not packed yet
-
-        # ── Selection box ─────────────────────────────────────────────────
-        self.preview_box = ctk.CTkFrame(frame, fg_color="transparent")
-        self.preview_box.pack(fill="both", expand=True, padx=12, pady=(2, 8))
+        return frame
+    
+    def create_statusbar_panel(self):
+        frame = ctk.CTkFrame(self, fg_color="transparent")
 
         self.preview_msg = ctk.CTkLabel(
-            self.preview_box, text="No file selected.",
-            font=("Inter", 10), text_color=("#6B7280", "#9CA3AF"), justify="left"
+            frame, 
+            text="No folder open.",
+            font=("Inter", 11), 
+            text_color=("#6B7280", "#9CA3AF"), 
+            anchor="w",
+            justify="left"
         )
-        self.preview_msg.pack(anchor="w", pady=(0, 6))
+        self.preview_msg.pack(side="left", anchor="center", pady=4)
+
+        self.progress_container = ctk.CTkFrame(frame, fg_color="transparent")
+        self.progress_container.pack(side="right", anchor="center", fill="y")
 
         self.progress_bar = ctk.CTkProgressBar(
-            self.preview_box, width=200, height=6, corner_radius=3,
+            self.progress_container, 
+            width=180, 
+            height=6, 
+            corner_radius=3,
             progress_color=("#6366F1", "#818CF8")
         )
         self.progress_bar.set(0)
 
-        controls = ctk.CTkFrame(self.preview_box, fg_color="transparent")
-        controls.pack(anchor="w")
-
-        self.type_sorter_btn = ctk.CTkButton(
-            controls,
-            text="Type Sorter",
-            width=110,
-            height=28,
-            corner_radius=8,
-            fg_color=("#E5E7EB", "#111827"),
-            hover_color=("#F3F4F6", "#374151"),
-            text_color=("#1F2937", "#F9FAFB"),
-            font=("Inter", 10, "bold"),
-            command=self.run_type_sorter,
-            state="disabled"
+        self.pull_bar = ctk.CTkProgressBar(
+            self.progress_container, 
+            width=150, 
+            height=6, 
+            corner_radius=3,
+            progress_color=("#F59E0B", "#D97706"),
+            fg_color=("#FEF3C7", "#292524")
         )
-        self.type_sorter_btn.pack(side="left", padx=(0, 8))
+        self.pull_bar.set(0)
 
-        self.ai_button = ctk.CTkButton(
-            controls,
-            text="AI Scan",
-            width=90,
-            height=28,
-            corner_radius=8,
-            fg_color=("#6366F1", "#818CF8"),
-            hover_color=("#818CF8", "#4F46E5"),
-            text_color="#FFFFFF",
-            font=("Inter", 10, "bold"),
-            command=self.run_ai_scan,
-            state="disabled"
+        self.pull_label = ctk.CTkLabel(
+            self.progress_container,
+            text="",
+            font=("Inter", 11),
+            text_color=("#92400E", "#FCD34D")
         )
-        self.ai_button.pack(side="left")
-
-        self.undo_btn = ctk.CTkButton(
-            controls,
-            text="Undo Scan",
-            width=80,
-            height=28,
-            corner_radius=8,
-            fg_color=("#EF4444", "#DC2626"),
-            hover_color=("#DC2626", "#B91C1C"),
-            text_color="#FFFFFF",
-            font=("Inter", 10, "bold"),
-            command=self.run_undo_scan,
-        )
-        self.undo_btn.pack(side="left", padx=(8, 0))
 
         return frame
 
@@ -344,7 +342,6 @@ class MainWindow(ctk.CTk):
         current = ctk.get_appearance_mode()
         new_mode = "Light" if current == "Dark" else "Dark"
         ctk.set_appearance_mode(new_mode)
-        self.theme_btn.configure(text=self.get_theme_icon())
         # Update all UI components with new colors
         self.after(100, self.refresh_ui_colors)
 
@@ -525,10 +522,10 @@ class MainWindow(ctk.CTk):
 
             self._set_ollama_chip("pulling", chip_text)
 
-            # ── Preview panel: progress bar + detail line
+            # ── Status bar: progress bar + detail line
             try:
-                self.pull_bar.pack(fill="x", padx=12, pady=(0, 0))
-                self.pull_label.pack(anchor="w", padx=12, pady=(0, 4))
+                self.pull_bar.pack(side="right", padx=10, pady=2)
+                self.pull_label.pack(side="right", padx=10, pady=2)
 
                 if total > 0:
                     done_str  = self._fmt_bytes(completed)
@@ -692,7 +689,7 @@ class MainWindow(ctk.CTk):
         self.ai_button.configure(state="disabled")
         
         # Show progress bar
-        self.progress_bar.pack(anchor="w", pady=(0, 10))
+        self.progress_bar.pack(side="right", padx=10, pady=2)
         self.progress_bar.set(0)
         self.update()
 
