@@ -20,6 +20,20 @@ class Database:
                 user_preferred_category TEXT
             )
         ''')
+
+        # Classification history for future learning and debugging
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS classification_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                file_name TEXT,
+                file_path TEXT,
+                predicted TEXT,
+                actual TEXT,
+                source TEXT,
+                confidence REAL,
+                timestamp REAL
+            )
+        ''')
         
         # New transaction logging table
         cursor.execute('''
@@ -73,10 +87,23 @@ class Database:
         conn.close()
 
     def save_classification(self, file_name, file_path, predicted, actual, source, confidence):
-        pass
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO classification_history (
+                file_name, file_path, predicted, actual, source, confidence, timestamp
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''', (file_name, file_path, predicted, actual, source, confidence, time.time()))
+        conn.commit()
+        conn.close()
 
     def get_classifications(self):
-        return []
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute('SELECT file_name, file_path, predicted, actual, source, confidence, timestamp FROM classification_history ORDER BY timestamp DESC')
+        rows = cursor.fetchall()
+        conn.close()
+        return rows
 
     def get_feedback_rules(self):
         """Retrieve all learned feedback rules to inject into the AI prompt."""

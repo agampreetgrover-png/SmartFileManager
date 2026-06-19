@@ -67,12 +67,12 @@ if __name__ == "__main__":
 
     app = MainWindow()
 
-    # Kick off the model-readiness check in the background.
-    # The MainWindow will update its status chip via after() callbacks.
+    # Kick off the model-readiness check after the UI event loop starts.
+    # The MainWindow will schedule UI updates safely from the background thread.
     from core import ollama_manager
-    ollama_manager.ensure_model_ready(
+    app.after(100, lambda: ollama_manager.ensure_model_ready(
         progress_cb=lambda stats: app.on_ollama_pull_progress(stats),
         done_cb=lambda ok: app.on_ollama_ready(ok),
-    )
+    ))
 
     app.mainloop()

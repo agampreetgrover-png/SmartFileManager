@@ -63,23 +63,29 @@ class App:
         return out
 
     @staticmethod
-    def ai_organize_folder(directory: str, progress_callback=None) -> Dict[str, Any]:
+    def ai_organize_folder(directory: str, progress_callback=None, cancel_event=None) -> Dict[str, Any]:
         """Run the new architecture AI pipeline."""
         if not os.path.exists(directory):
             return {"error": "Directory is not found."}
-            
+
+        if cancel_event and cancel_event.is_set():
+            return {"error": "AI Scan cancelled.", "cancelled": True, "summary": "AI Scan cancelled by user.", "groups": []}
+
         if progress_callback: progress_callback(0, 1, "Deep scanning folder...")
-            
+
         # 1. Crawler
         file_objects = []
         _id_counter = 1
         for root, dirs, files in os.walk(directory):
+            if cancel_event and cancel_event.is_set():
+                return {"error": "AI Scan cancelled.", "cancelled": True, "summary": "AI Scan cancelled by user.", "groups": []}
+
             for name in files:
                 full = os.path.join(root, name)
                 rel_path = os.path.relpath(full, directory)
                 size = os.path.getsize(full) if os.path.exists(full) else 0
                 _, ext = os.path.splitext(name)
-                
+
                 file_objects.append(FileObject(
                     id=_id_counter,
                     name=name,
@@ -88,19 +94,19 @@ class App:
                     original_path=rel_path
                 ))
                 _id_counter += 1
-                
+
         if not file_objects:
             return {"error": "Directory is empty."}
-            
+
         # Create an ID to Object map for fast lookup later
         id_map = {f.id: f for f in file_objects}
-        
+
         # 2. Heuristics
         deterministic_groups, remaining_files = HeuristicEngine.extract_obvious_groups(file_objects)
-        
+
         # We will build a unified JSON-like structure for the UI preview
         final_groups = []
-        
+
         # Add deterministic groups
         for folder_name, files in deterministic_groups.items():
             final_groups.append({
@@ -114,17 +120,23 @@ class App:
                     } for f in files
                 ]
             })
-            
+
+        if cancel_event and cancel_event.is_set():
+            return {"error": "AI Scan cancelled.", "cancelled": True, "summary": "AI Scan cancelled by user.", "groups": final_groups}
+
         # 3. AI Chunker and Processing
         if remaining_files:
             chunks = ai_classifier._chunk_files(remaining_files, chunk_size=25)
             total_chunks = len(chunks)
             for i, chunk in enumerate(chunks):
+                if cancel_event and cancel_event.is_set():
+                    return {"error": "AI Scan cancelled.", "cancelled": True, "summary": "AI Scan cancelled by user.", "groups": final_groups}
+
                 if progress_callback:
                     progress_callback(i, total_chunks, f"AI processing batch {i+1} of {total_chunks}...")
-                    
+
                 plan = ai_classifier.ai_organize_batch(chunk)
-                
+
                 # Remap the IDs back to files and append to final_groups
                 for group in plan.groups:
                     group_files = []
@@ -142,11 +154,11 @@ class App:
                             "confidence": group.confidence,
                             "files": group_files
                         })
-                        
+
         if progress_callback: progress_callback(1, 1, "Finalizing UI preview...")
-                        
+
         batch_id = str(uuid.uuid4())
-        
+
         return {
             "summary": "Files organized successfully using heuristics and AI.",
             "groups": final_groups,

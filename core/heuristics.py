@@ -18,27 +18,28 @@ class HeuristicEngine:
         for file in files:
             ext = file.ext.lower()
             name = file.name.lower()
-            
+            path_parts = [p.lower() for p in file.original_path.split(os.sep)]
+
             # 1. Project/Git detection
-            if ".git" in file.original_path.split(os.sep) or "node_modules" in file.original_path.split(os.sep):
+            if ".git" in path_parts or "node_modules" in path_parts:
                 deterministic_groups.setdefault("Code Projects Assets", []).append(file)
                 continue
-                
+
             # 2. Virtual Environments
-            if "venv" in file.original_path.split(os.sep) or ".env" in file.name:
-                deterministic_groups.setdefault("Virtual Environments", []).append(file)
+            if "venv" in path_parts or ".env" in name or "pyproject.toml" in name or "requirements.txt" in name:
+                deterministic_groups.setdefault("Project Configuration", []).append(file)
                 continue
-                
+
             # 3. Cache and Temps
-            if ext in ['.tmp', '.cache', '.bak'] or '__pycache__' in file.original_path:
+            if ext in ['.tmp', '.cache', '.bak'] or '__pycache__' in file.original_path or 'thumbs.db' in name:
                 deterministic_groups.setdefault("Temporary & Cache Files", []).append(file)
                 continue
-                
+
             # 4. OS Specific
-            if file.name in ['.DS_Store', 'Thumbs.db', 'desktop.ini']:
+            if name in ['.ds_store', 'thumbs.db', 'desktop.ini']:
                 deterministic_groups.setdefault("OS System Files", []).append(file)
                 continue
-                
+
             # If no deterministic rule matched, send to AI
             remaining_files.append(file)
             

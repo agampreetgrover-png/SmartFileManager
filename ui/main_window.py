@@ -7,6 +7,16 @@ import os
 from app_bridge import App
 from core import ollama_manager
 
+MODEL_CAPABILITY_HINTS = {
+    "phi4-mini:latest": "Compact, Fast",
+    "phi4-small:latest": "Tiny, Very Fast",
+    "phi4-medium:latest": "Balanced, Accurate",
+    "phi4-large:latest": "Large, More Accurate",
+    "llama2:replit": "General Purpose",
+    "llama2:13b": "High Accuracy",
+    "llama2:70b": "Very Large, Best Quality",
+}
+
 ctk.set_appearance_mode("light")  # Start with light mode
 ctk.set_default_color_theme("blue")
 
@@ -39,6 +49,9 @@ class MainWindow(ctk.CTk):
 
         # Bridge to backend
         self.bridge = App
+        self.ai_scan_cancel_event = threading.Event()
+        self.ai_scan_thread = None
+        self.scan_running = False
 
         self.topbar = self.create_topbar()
         self.topbar.pack(in_=self.main_container, side="top", fill="x", pady=(16, 8), padx=16)
@@ -57,6 +70,9 @@ class MainWindow(ctk.CTk):
 
         # Apply glass effect
         self.apply_glass_effect()
+
+        # Schedule initial model refresh after the UI event loop begins
+        self.after(100, self._refresh_model_list)
 
     def create_topbar(self):
         frame = ctk.CTkFrame(self, height=80, corner_radius=0, fg_color="transparent", border_width=0)
@@ -109,6 +125,10 @@ class MainWindow(ctk.CTk):
         # AI Tools grouped section
         self.ai_tools_frame = ctk.CTkFrame(right, fg_color="transparent")
         self.ai_tools_frame.pack(side="right", padx=8)
+
+        self.ai_model_names = []
+        self.ai_model_labels = []
+        self.ai_model_map = {}
 
         self.undo_btn = ctk.CTkButton(
             self.ai_tools_frame,
@@ -198,12 +218,12 @@ class MainWindow(ctk.CTk):
             font=("Inter", 12),
         ).pack(side="left", padx=(0, 4))
 
-        self._model_var = ctk.StringVar(value=ollama_manager.get_active_model())
+        self._model_var = ctk.StringVar()
         self.model_selector = ctk.CTkOptionMenu(
             model_section,
             variable=self._model_var,
-            values=[ollama_manager.get_active_model()],
-            width=140,
+            values=[],
+            width=200,
             height=32,
             corner_radius=8,
             fg_color=("#F3F4F6", "#111827"),
@@ -259,6 +279,19 @@ class MainWindow(ctk.CTk):
         )
         self.progress_bar.set(0)
 
+        self.cancel_scan_btn = ctk.CTkButton(
+            self.progress_container,
+            text="Cancel Scan",
+            width=110,
+            height=28,
+            corner_radius=12,
+            fg_color=("#EF4444", "#DC2626"),
+            hover_color=("#DC2626", "#B91C1C"),
+            text_color="#FFFFFF",
+            font=("Inter", 10, "bold"),
+            command=self.cancel_ai_scan
+        )
+
         self.pull_bar = ctk.CTkProgressBar(
             self.progress_container, 
             width=150, 
@@ -280,10 +313,15 @@ class MainWindow(ctk.CTk):
 
     # ── Model selector helpers ─────────────────────────────────────────────
 
-    def _on_model_changed(self, model_name: str):
+    def _format_model_label(self, model_name: str) -> str:
+        hint = MODEL_CAPABILITY_HINTS.get(model_name, "Standard")
+        return f"{model_name} ({hint})"
+
+    def _on_model_changed(self, display_label: str):
         """Called when user picks a different model."""
+        model_name = self.ai_model_map.get(display_label, display_label)
         ollama_manager.set_active_model(model_name)
-        self._model_var.set(model_name)
+        self._model_var.set(display_label)
         self.preview_msg.configure(text=f"Model set to {model_name}")
 
     def _refresh_model_list(self):
@@ -299,12 +337,17 @@ class MainWindow(ctk.CTk):
         if not models:
             return
         current = ollama_manager.get_active_model()
-        self.model_selector.configure(values=models)
+        self.ai_model_names = models
+        self.ai_model_labels = [self._format_model_label(model) for model in models]
+        self.ai_model_map = {label: model for model, label in zip(models, self.ai_model_labels)}
+        self.model_selector.configure(values=self.ai_model_labels)
+
+        current = ollama_manager.get_active_model()
         if current in models:
-            self._model_var.set(current)
-        else:
-            self._model_var.set(models[0])
-            ollama_manager.set_active_model(models[0])
+            self._model_var.set(self._format_model_label(current))
+        elif self.ai_model_labels:
+            self._model_var.set(self.ai_model_labels[0])
+            ollama_manager.set_active_model(self.ai_model_names[0])
 
     def open_folder_dialog(self):
         """Open a dialog to select a folder from the PC and load its files."""
@@ -707,26 +750,34 @@ class MainWindow(ctk.CTk):
             self.preview_msg.configure(text="No folder open for AI Scan.")
             return
 
+        if self.scan_running:
+            self.preview_msg.configure(text="AI Scan already running.")
+            return
+
         self.preview_msg.configure(text="Starting AI Scan...")
         self.ai_button.configure(state="disabled")
-        
-        # Show progress bar
+        self.cancel_scan_btn.pack(side="right", padx=(10, 0), pady=2)
         self.progress_bar.pack(side="right", padx=10, pady=2)
         self.progress_bar.set(0)
-        self.update()
+        self.ai_scan_cancel_event.clear()
+        self.scan_running = True
 
         def update_progress(current, total, msg):
-            # Must run on main thread
             self.after(0, lambda: self._update_progress_ui(current, total, msg))
 
         def background_task():
-            # Run AI organization through the bridge
-            result = self.bridge.ai_organize_folder(directory, progress_callback=update_progress)
-            
-            # Schedule the UI update back on the main thread
+            try:
+                result = self.bridge.ai_organize_folder(
+                    directory,
+                    progress_callback=update_progress,
+                    cancel_event=self.ai_scan_cancel_event
+                )
+            except Exception as e:
+                result = {"error": str(e)}
             self.after(0, lambda: self._on_ai_scan_complete(directory, result))
-            
-        threading.Thread(target=background_task, daemon=True).start()
+
+        self.ai_scan_thread = threading.Thread(target=background_task, daemon=True)
+        self.ai_scan_thread.start()
 
     def _update_progress_ui(self, current, total, msg):
         self.preview_msg.configure(text=msg)
@@ -735,9 +786,34 @@ class MainWindow(ctk.CTk):
         else:
             self.progress_bar.set(0)
 
+    def cancel_ai_scan(self):
+        if not self.scan_running:
+            return
+        self.ai_scan_cancel_event.set()
+        self.preview_msg.configure(text="Cancelling AI Scan…")
+        self.cancel_scan_btn.configure(state="disabled")
+
+    def _end_ai_scan(self):
+        self.scan_running = False
+        try:
+            self.ai_button.configure(state="normal")
+        except Exception:
+            pass
+        try:
+            self.progress_bar.pack_forget()
+        except Exception:
+            pass
+        try:
+            self.cancel_scan_btn.pack_forget()
+        except Exception:
+            pass
+
     def _on_ai_scan_complete(self, directory, result):
-        self.ai_button.configure(state="normal")
-        self.progress_bar.pack_forget() # hide progress bar
+        self._end_ai_scan()
+        if result.get("cancelled"):
+            self.preview_msg.configure(text="AI Scan cancelled.")
+            return
+
         if "error" in result:
             self.preview_msg.configure(text=f"AI Error: {result['error']}")
             return
@@ -785,12 +861,25 @@ class MainWindow(ctk.CTk):
             for group in groups:
                 group_name = group.get('folder_name', 'Unknown Folder')
                 files = group.get('files', [])
-                
+                reason = group.get('reason', 'No reason provided')
+                confidence = group.get('confidence', 0.0)
+
                 section = ctk.CTkFrame(scroll, fg_color=("#F3F4F6", "#111827"), corner_radius=10)
                 section.pack(fill="x", padx=10, pady=8)
 
                 title = ctk.CTkLabel(section, text=f"{group_name} ({len(files)})", font=("Inter", 12, "bold"), anchor="w")
                 title.pack(fill="x", padx=12, pady=(10, 4))
+
+                subtitle = ctk.CTkLabel(
+                    section,
+                    text=f"{reason} · Confidence: {int(confidence * 100)}%",
+                    font=("Inter", 10),
+                    text_color=("#6B7280", "#9CA3AF"),
+                    anchor="w",
+                    wraplength=860,
+                    justify="left"
+                )
+                subtitle.pack(fill="x", padx=12, pady=(0, 8))
 
                 body = ctk.CTkFrame(section, fg_color=("#FFFFFF", "#111827"), corner_radius=8)
                 body.pack(fill="x", padx=12, pady=(0, 10))
@@ -798,12 +887,19 @@ class MainWindow(ctk.CTk):
                 for item in files:
                     item_row = ctk.CTkFrame(body, fg_color=("#F9FAFB", "#1F2937"), corner_radius=6)
                     item_row.pack(fill="x", padx=6, pady=4)
-                    
+
                     file_name = item.get('file_name', 'Unknown')
                     original = item.get('original_path', file_name)
-                    
-                    text_str = f"File: {original}"
-                    ctk.CTkLabel(item_row, text=text_str, font=("Inter", 10), justify="left", anchor="w", wraplength=480).pack(fill="x", padx=10, pady=6)
+
+                    label_text = f"{original}"
+                    ctk.CTkLabel(
+                        item_row,
+                        text=label_text,
+                        font=("Inter", 10),
+                        justify="left",
+                        anchor="w",
+                        wraplength=860
+                    ).pack(fill="x", padx=10, pady=6)
 
         buttons = ctk.CTkFrame(win, fg_color="transparent")
         buttons.pack(fill="x", padx=12, pady=(0, 12))
