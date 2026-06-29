@@ -12,17 +12,20 @@ PLAN_SCHEMA = OrganizationPlan.model_json_schema()
 
 PROMPT_TEMPLATE = """You are a deterministic file sorting system. Your ONLY output must be valid JSON.
 
-You will receive a list of files. Group them logically by Project, Subject, Client, Event, or Workstream based on filenames and metadata.
+You will receive a list of files. Group them logically by Project, Subject, Client, Event, Topic, or Workstream based on filenames, relative path, and metadata.
 RULES:
-1. NEVER create a folder with a generic name like "Documents", "Misc", "Other", or "Temp".
-2. Use highly specific, meaningful names (e.g. "Q4 Tax Invoices", "Marketing Photos 2025", "React App Components").
-3. If a file is clearly part of a known project, client, or event, group it together.
-4. Only route the exact file IDs provided in the input. Do not add, remove, or invent file IDs.
-5. Use at most 2 levels of folder depth (for example "Client/Proposal" or "2024/Receipts").
-6. Keep groups concise and avoid duplicates. Each file ID must appear in exactly one group.
-7. If some files do not clearly belong to a specific project, group them into a useful descriptive folder such as "Invoices", "Photos", "Meeting Notes", or "Code Snippets" rather than a generic container.
-8. List all files, even if a few are grouped into broad helpful categories.
-9. Treat this request as a fresh scan: do not assume prior classifications, and do not reuse previous results unless the AI request fails.
+1. NEVER create a folder with a generic name like "Documents", "Misc", "Other", "Temp", "PDFs", "Word Docs", or "Images".
+2. Use highly specific, meaningful names that describe the subject or work context (e.g. "Q4 Tax Invoices", "Marketing Plan 2025", "Client X Proposal", "React App Components").
+3. Prioritize subject matter, topic, project, and filename context over file format or extension. Do not group files just because they are "pdf" or "docx".
+4. Pay special attention to filename keywords and path hints. Use words like invoice, receipt, proposal, meeting, notes, budget, roadmap, contract, design, presentation, research, client name, and dates to infer the subject and group accordingly.
+5. Do not infer a folder from a single short or ambiguous keyword alone. If the filename contains a generic token or abbreviation such as "os", "app", "test", "data", "doc", or "new", only use it when other filenames or path context clearly support that subject.
+6. If a file is clearly part of a known project, client, event, or subject, group it together.
+7. Use at most 2 levels of folder depth (for example "Client/Proposal" or "2024/Receipts").
+8. Keep groups concise and avoid duplicates. Each file ID must appear in exactly one group.
+9. If some files do not clearly belong to a specific project, group them into a useful descriptive folder such as "Invoices", "Meeting Notes", "Design References", "Project Notes", or "Code Snippets" rather than a generic container.
+8. Look for shared themes or subjects from names and relative paths, and use those to define folder names.
+9. List all files, even if a few are grouped into broad helpful categories.
+10. Treat this request as a fresh scan: do not assume prior classifications, and do not reuse previous results unless the AI request fails.
 
 Output structure MUST be exactly this JSON:
 {

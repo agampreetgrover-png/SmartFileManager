@@ -52,6 +52,8 @@ class MainWindow(ctk.CTk):
         self.ai_scan_cancel_event = threading.Event()
         self.ai_scan_thread = None
         self.scan_running = False
+        self._active_scan_id = 0
+        self._app_closing = False
 
         self.topbar = self.create_topbar()
         self.topbar.pack(in_=self.main_container, side="top", fill="x", pady=(16, 8), padx=16)
@@ -71,8 +73,26 @@ class MainWindow(ctk.CTk):
         # Apply glass effect
         self.apply_glass_effect()
 
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
+
         # Schedule initial model refresh after the UI event loop begins
         self.after(100, self._refresh_model_list)
+
+    def _safe_ui_call(self, callback):
+        if self._app_closing or not self.winfo_exists():
+            return
+        try:
+            self.after(0, callback)
+        except Exception:
+            pass
+
+    def _set_scan_busy_state(self):
+        self.ai_button.configure(state="disabled")
+        self.type_sorter_btn.configure(state="disabled")
+        self.cancel_scan_btn.configure(state="normal")
+        self.cancel_scan_btn.pack(side="right", padx=(10, 0), pady=2)
+        self.progress_bar.pack(side="right", padx=10, pady=2)
+        self.progress_bar.set(0)
 
     def create_topbar(self):
         frame = ctk.CTkFrame(self, height=80, corner_radius=0, fg_color="transparent", border_width=0)
@@ -328,7 +348,7 @@ class MainWindow(ctk.CTk):
         """Query Ollama for locally available models and update the dropdown."""
         def _fetch():
             models = ollama_manager.get_available_models()
-            self.after(0, lambda: self._apply_model_list(models))
+            self._safe_ui_call(lambda: self._apply_model_list(models))
 
         threading.Thread(target=_fetch, daemon=True).start()
 
@@ -754,27 +774,28 @@ class MainWindow(ctk.CTk):
             self.preview_msg.configure(text="AI Scan already running.")
             return
 
+        self._active_scan_id += 1
+        run_id = self._active_scan_id
+        cancel_event = threading.Event()
+        self.ai_scan_cancel_event = cancel_event
+
         self.preview_msg.configure(text="Starting AI Scan...")
-        self.ai_button.configure(state="disabled")
-        self.cancel_scan_btn.pack(side="right", padx=(10, 0), pady=2)
-        self.progress_bar.pack(side="right", padx=10, pady=2)
-        self.progress_bar.set(0)
-        self.ai_scan_cancel_event.clear()
+        self._set_scan_busy_state()
         self.scan_running = True
 
         def update_progress(current, total, msg):
-            self.after(0, lambda: self._update_progress_ui(current, total, msg))
+            self._safe_ui_call(lambda: self._update_progress_ui(current, total, msg))
 
         def background_task():
             try:
                 result = self.bridge.ai_organize_folder(
                     directory,
                     progress_callback=update_progress,
-                    cancel_event=self.ai_scan_cancel_event
+                    cancel_event=cancel_event
                 )
             except Exception as e:
                 result = {"error": str(e)}
-            self.after(0, lambda: self._on_ai_scan_complete(directory, result))
+            self._safe_ui_call(lambda: self._on_ai_scan_complete(directory, result, run_id))
 
         self.ai_scan_thread = threading.Thread(target=background_task, daemon=True)
         self.ai_scan_thread.start()
@@ -789,26 +810,36 @@ class MainWindow(ctk.CTk):
     def cancel_ai_scan(self):
         if not self.scan_running:
             return
-        self.ai_scan_cancel_event.set()
-        self.preview_msg.configure(text="Cancelling AI Scan…")
-        self.cancel_scan_btn.configure(state="disabled")
 
-    def _end_ai_scan(self):
+        if hasattr(self, 'ai_scan_cancel_event'):
+            self.ai_scan_cancel_event.set()
+        self.preview_msg.configure(text="AI Scan cancelled.")
+        self.cancel_scan_btn.configure(state="disabled")
+        self._end_ai_scan()
+
+    def _end_ai_scan(self, message=None):
         self.scan_running = False
         try:
-            self.ai_button.configure(state="normal")
-        except Exception:
-            pass
-        try:
+            self.progress_bar.set(0)
             self.progress_bar.pack_forget()
         except Exception:
             pass
         try:
+            self.cancel_scan_btn.configure(state="normal")
             self.cancel_scan_btn.pack_forget()
         except Exception:
             pass
+        try:
+            self.on_folder_changed()
+        except Exception:
+            pass
+        if message is not None:
+            self.preview_msg.configure(text=message)
 
-    def _on_ai_scan_complete(self, directory, result):
+    def _on_ai_scan_complete(self, directory, result, run_id=None):
+        if run_id is not None and run_id != self._active_scan_id:
+            return
+
         self._end_ai_scan()
         if result.get("cancelled"):
             self.preview_msg.configure(text="AI Scan cancelled.")
@@ -820,6 +851,12 @@ class MainWindow(ctk.CTk):
 
         self.preview_msg.configure(text="AI Scan complete!")
         self.show_ai_scan_preview(directory, result)
+
+    def _on_close(self):
+        self._app_closing = True
+        if self.scan_running and hasattr(self, 'ai_scan_cancel_event'):
+            self.ai_scan_cancel_event.set()
+        self.destroy()
 
     def run_undo_scan(self):
         result = self.bridge.undo_last_scan()
@@ -854,21 +891,140 @@ class MainWindow(ctk.CTk):
 
         groups = result.get('groups', [])
         batch_id = result.get('batch_id')
-        
-        if not groups:
-            ctk.CTkLabel(scroll, text="No files were organized.", font=("Inter", 12), text_color=("#111827", "#F9FAFB")).pack(pady=20)
-        else:
-            for group in groups:
+
+        selected_items = set()
+        drag_state = {
+            "active": False,
+            "source_group": None,
+        }
+        group_ui = []
+
+        def _refresh_selection_styles():
+            for gi, ui in enumerate(group_ui):
+                for fi, item_frame in enumerate(ui.get("item_frames", [])):
+                    if (gi, fi) in selected_items:
+                        item_frame.configure(fg_color=("#DBEAFE", "#1E3A8A"), border_color=("#93C5FD", "#60A5FA"))
+                    else:
+                        item_frame.configure(fg_color=("#F9FAFB", "#1F2937"), border_color=("#E5E7EB", "#374151"))
+
+        def _clear_highlights():
+            for ui in group_ui:
+                ui["frame"].configure(border_color=("#E5E7EB", "#374151"), fg_color=("#F3F4F6", "#111827"))
+
+        def _highlight_group(gi, entering):
+            if not drag_state["active"]:
+                return
+            ui = group_ui[gi]
+            if entering:
+                ui["frame"].configure(border_color=("#8B5CF6", "#7C3AED"), fg_color=("#EEF2FF", "#1E293B"))
+            else:
+                ui["frame"].configure(border_color=("#E5E7EB", "#374151"), fg_color=("#F3F4F6", "#111827"))
+
+        def _select_file(gi, fi, add=False):
+            key = (gi, fi)
+            if add:
+                if key in selected_items:
+                    selected_items.remove(key)
+                else:
+                    selected_items.add(key)
+            else:
+                selected_items.clear()
+                selected_items.add(key)
+            _refresh_selection_styles()
+
+        def _start_drag(gi):
+            drag_state["active"] = True
+            drag_state["source_group"] = gi
+
+        def _drop_to_group(target_gi):
+            if not drag_state["active"]:
+                return
+            if drag_state["source_group"] is None:
+                drag_state["active"] = False
+                return
+            if target_gi == drag_state["source_group"]:
+                drag_state["active"] = False
+                _clear_highlights()
+                return
+
+            transfer = sorted(selected_items, reverse=True)
+            if not transfer:
+                drag_state["active"] = False
+                _clear_highlights()
+                return
+
+            moved = []
+            for gi, fi in transfer:
+                if gi < 0 or gi >= len(groups):
+                    continue
+                source_files = groups[gi].get("files", [])
+                if fi < 0 or fi >= len(source_files):
+                    continue
+                moved.append(source_files.pop(fi))
+
+            groups[target_gi].setdefault("files", []).extend(reversed(moved))
+            selected_items.clear()
+            drag_state["active"] = False
+            _clear_highlights()
+            _render_groups()
+
+        def _prompt_group_rename(gi):
+            group = groups[gi]
+            edit_win = ctk.CTkToplevel(win)
+            edit_win.transient(win)
+            edit_win.grab_set()
+            edit_win.title("Rename Suggested Folder")
+            edit_win.geometry("420x140")
+            edit_win.configure(fg_color=("#F3F4F6", "#071E22"))
+
+            ctk.CTkLabel(edit_win, text="Folder Name", font=("Inter", 13, "bold"), anchor="w").pack(fill="x", padx=16, pady=(14, 4))
+            name_var = ctk.StringVar(value=group.get("folder_name", ""))
+            name_entry = ctk.CTkEntry(edit_win, textvariable=name_var, width=380, height=36, corner_radius=12)
+            name_entry.pack(padx=16, pady=(0, 12))
+            name_entry.focus()
+
+            button_row = ctk.CTkFrame(edit_win, fg_color="transparent")
+            button_row.pack(fill="x", padx=16, pady=(0, 12))
+
+            def _save_name():
+                new_name = name_var.get().strip()
+                if new_name:
+                    group["folder_name"] = new_name
+                    _render_groups()
+                edit_win.destroy()
+
+            ctk.CTkButton(button_row, text="Cancel", width=120, height=32, corner_radius=10, fg_color=("#E5E7EB", "#374151"), text_color=("#1F2937", "#F9FAFB"), command=edit_win.destroy).pack(side="left")
+            ctk.CTkButton(button_row, text="Save", width=120, height=32, corner_radius=10, fg_color=("#2563EB", "#1D4ED8"), text_color="#FFFFFF", command=_save_name).pack(side="right")
+
+        def _render_groups():
+            for widget in scroll.winfo_children():
+                widget.destroy()
+
+            instruction = ctk.CTkLabel(scroll, text="Drag files into another suggested folder to relocate them. Ctrl+click to select multiple files.", font=("Inter", 11), text_color=("#D1D5DB", "#CBD5E1"), wraplength=940, justify="left")
+            instruction.pack(fill="x", padx=10, pady=(10, 8))
+            group_ui.clear()
+
+            if not groups:
+                ctk.CTkLabel(scroll, text="No files were organized.", font=("Inter", 12), text_color=("#111827", "#F9FAFB")).pack(pady=20)
+                return
+
+            for gi, group in enumerate(groups):
                 group_name = group.get('folder_name', 'Unknown Folder')
                 files = group.get('files', [])
                 reason = group.get('reason', 'No reason provided')
                 confidence = group.get('confidence', 0.0)
 
-                section = ctk.CTkFrame(scroll, fg_color=("#F3F4F6", "#111827"), corner_radius=10)
+                section = ctk.CTkFrame(scroll, fg_color=("#F3F4F6", "#111827"), corner_radius=10, border_width=1, border_color=("#E5E7EB", "#374151"))
                 section.pack(fill="x", padx=10, pady=8)
 
-                title = ctk.CTkLabel(section, text=f"{group_name} ({len(files)})", font=("Inter", 12, "bold"), anchor="w")
-                title.pack(fill="x", padx=12, pady=(10, 4))
+                header = ctk.CTkFrame(section, fg_color="transparent")
+                header.pack(fill="x", padx=12, pady=(10, 4))
+
+                title_label = ctk.CTkLabel(header, text=f"{group_name} ({len(files)})", font=("Inter", 12, "bold"), anchor="w")
+                title_label.pack(side="left", fill="x", expand=True)
+
+                ctk.CTkLabel(header, text=f"{len(files)} files", font=("Inter", 10), text_color=("#6B7280", "#9CA3AF"), fg_color="transparent").pack(side="right", padx=(0, 8))
+                ctk.CTkButton(header, text="Rename", width=90, height=28, corner_radius=10, fg_color=("#E5E7EB", "#374151"), text_color=("#1F2937", "#F9FAFB"), command=lambda gi=gi: _prompt_group_rename(gi)).pack(side="right")
 
                 subtitle = ctk.CTkLabel(
                     section,
@@ -881,17 +1037,31 @@ class MainWindow(ctk.CTk):
                 )
                 subtitle.pack(fill="x", padx=12, pady=(0, 8))
 
-                body = ctk.CTkFrame(section, fg_color=("#FFFFFF", "#111827"), corner_radius=8)
+                body = ctk.CTkFrame(section, fg_color=("#FFFFFF", "#111827"), corner_radius=8, border_width=1, border_color=("#E5E7EB", "#374151"))
                 body.pack(fill="x", padx=12, pady=(0, 10))
 
-                for item in files:
-                    item_row = ctk.CTkFrame(body, fg_color=("#F9FAFB", "#1F2937"), corner_radius=6)
+                def _bind_drop_zone(widget, gi=gi):
+                    widget.bind("<Enter>", lambda e: _highlight_group(gi, True))
+                    widget.bind("<Leave>", lambda e: _highlight_group(gi, False))
+                    widget.bind("<ButtonRelease-1>", lambda e: _drop_to_group(gi))
+
+                _bind_drop_zone(section)
+                _bind_drop_zone(body)
+
+                ui_data = {
+                    "frame": section,
+                    "item_frames": []
+                }
+
+                for fi, item in enumerate(files):
+                    item_row = ctk.CTkFrame(body, fg_color=("#F9FAFB", "#1F2937"), corner_radius=6, border_width=1, border_color=("#E5E7EB", "#374151"))
                     item_row.pack(fill="x", padx=6, pady=4)
+                    ui_data["item_frames"].append(item_row)
 
                     file_name = item.get('file_name', 'Unknown')
                     original = item.get('original_path', file_name)
-
                     label_text = f"{original}"
+
                     ctk.CTkLabel(
                         item_row,
                         text=label_text,
@@ -900,6 +1070,18 @@ class MainWindow(ctk.CTk):
                         anchor="w",
                         wraplength=860
                     ).pack(fill="x", padx=10, pady=6)
+
+                    def _on_item_press(event, gi=gi, fi=fi):
+                        add = (event.state & 0x4) != 0
+                        _select_file(gi, fi, add=add)
+                        _start_drag(gi)
+
+                    item_row.bind("<Button-1>", _on_item_press)
+                    item_row.bind("<B1-Motion>", lambda e, gi=gi: _start_drag(gi))
+
+                group_ui.append(ui_data)
+
+        _render_groups()
 
         buttons = ctk.CTkFrame(win, fg_color="transparent")
         buttons.pack(fill="x", padx=12, pady=(0, 12))

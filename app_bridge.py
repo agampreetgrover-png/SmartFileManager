@@ -155,6 +155,29 @@ class App:
                             "files": group_files
                         })
 
+        # Ensure all files are visible in the preview, even if the AI plan missed a few.
+        seen_file_ids = {
+            file_obj["original_path"]
+            for group in final_groups
+            for file_obj in group.get("files", [])
+        }
+        missing_files = [
+            {
+                "original_path": obj.original_path,
+                "file_name": obj.name
+            }
+            for obj in file_objects
+            if obj.original_path not in seen_file_ids
+        ]
+
+        if missing_files:
+            final_groups.append({
+                "folder_name": "Unsorted Files",
+                "reason": "These files were not assigned to a specific subject group by the AI, so they are shown here for review.",
+                "confidence": 0.5,
+                "files": missing_files
+            })
+
         if progress_callback: progress_callback(1, 1, "Finalizing UI preview...")
 
         batch_id = str(uuid.uuid4())
